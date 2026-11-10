@@ -1,4 +1,4 @@
-import type { ActorMovieList, CatalogMovieDetails, MediaType, MetadataSource, Movie, MovieGridList, MovieInput, MovieList } from "@film-shelf/shared";
+import type { ActorFilmography, ActorMovieList, CatalogMovieDetails, MediaType, MetadataSource, Movie, MovieGridList, MovieInput, MovieList } from "@film-shelf/shared";
 import { and, desc, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -11,6 +11,7 @@ import { createPosterGallery } from "./poster-gallery";
 import { createPosterStore, doubanPosterSource, localPosterUrl, LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN, type PosterStore } from "./posters";
 import { actorImageSource, localActorImageUrl } from "./actor-images";
 import { localizeCastImages } from "./cast-images";
+import { resolveDoubanMovieIdentity } from "./douban-identities";
 import { createTmdbProvider, type MovieMetadataProvider } from "./tmdb";
 import { createDoubanProvider, tmdbMetadataProvider, type MetadataProvider } from "./metadata";
 import { posterPhotosBodySchema, posterSelectionBodySchema, posterSyncBodySchema, actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
@@ -59,7 +60,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
   }
 
   function findExternalMovie(source: MetadataSource, mediaType: MediaType, externalId: number) {
-    const identity = source === "tmdb" ? and(eq(movies.mediaType, mediaType), eq(movies.tmdbId, externalId)) : eq(movies.doubanId, externalId);
+    const identity = and(eq(movies.mediaType, mediaType), source === "tmdb" ? eq(movies.tmdbId, externalId) : eq(movies.doubanId, externalId));
     return db.select(movieColumns).from(movies).where(identity).get();
   }
 
@@ -79,8 +80,10 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
   }
 
   async function insertMovie(input: MovieInput): Promise<Movie> {
+    input = await resolveDoubanMovieIdentity(input, douban, provider);
     const mediaType = input.mediaType ?? "movie";
-    if ((input.tmdbId && findExternalMovie("tmdb", mediaType, input.tmdbId)) || (input.doubanId && findExternalMovie("douban", mediaType, input.doubanId))) duplicateMovie();
+    const duplicateDouban = input.doubanId && db.select({ id: movies.id }).from(movies).where(eq(movies.doubanId, input.doubanId)).get();
+    if ((input.tmdbId && findExternalMovie("tmdb", mediaType, input.tmdbId)) || duplicateDouban) duplicateMovie();
     const posterUrl = await posters.save(input.posterUrl);
     await posters.ensureVariants(posterUrl);
     const cast = await localizeCastImages(input.cast || [], posters);
@@ -138,20 +141,45 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
 
   app.get("/api/actors/:id/movies", async (c) => {
     const personId = idSchema.parse(c.req.param("id"));
-    const { page, pageSize, mediaType } = actorMoviesQuerySchema.parse(c.req.query());
-    if (!provider.actorFilmography) throw new ApiException(503, "METADATA_UNAVAILABLE", "当前资料源暂不支持演员作品查询，请稍后重试。");
-    const filmography = await provider.actorFilmography(personId, mediaType);
+    const { page, pageSize, mediaType, provider: actorSource } = actorMoviesQuerySchema.parse(c.req.query());
+    let filmography: ActorFilmography;
+    if (actorSource === "douban") {
+      if (!douban.actor || !douban.actorFilmography) throw new ApiException(503, "METADATA_UNAVAILABLE", "当前资料源暂不支持演员作品查询，请稍后重试。");
+      const actor = await douban.actor(personId);
+      let matched: ActorFilmography | null = null;
+      if (actor.imdbId && provider.configured && provider.findByImdb && provider.actorFilmography) {
+        try {
+          const tmdbPersonId = await provider.findByImdb(actor.imdbId, "person");
+          if (tmdbPersonId) matched = await provider.actorFilmography(tmdbPersonId, mediaType);
+        } catch (error) {
+          console.warn("Could not read linked TMDB actor:", personId, error instanceof Error ? error.name : "UnknownError");
+        }
+      }
+      const credits = matched || await douban.actorFilmography(personId, mediaType);
+      const [localized] = await localizeCastImages([{ name: actor.name, character: "", profileUrl: actor.profileUrl }], posters);
+      filmography = { ...credits, actor: {
+        ...credits.actor, doubanPersonId: personId, name: actor.name,
+        profileUrl: localActorImageUrl(localized?.profileUrl) || credits.actor.profileUrl,
+      } };
+    } else {
+      if (!provider.actorFilmography) throw new ApiException(503, "METADATA_UNAVAILABLE", "当前资料源暂不支持演员作品查询，请稍后重试。");
+      filmography = await provider.actorFilmography(personId, mediaType);
+    }
     const pageMovies = filmography.movies.slice((page - 1) * pageSize, page * pageSize);
+    const tmdbIds = pageMovies.flatMap(movie => movie.tmdbId ? [movie.tmdbId] : []);
+    const doubanIds = pageMovies.flatMap(movie => movie.doubanId ? [movie.doubanId] : []);
     const localMovies = pageMovies.length ? db.select({
       id: movies.id,
       tmdbId: movies.tmdbId,
+      doubanId: movies.doubanId,
       status: movies.status,
       title: movies.title,
       posterUrl: movies.posterUrl,
-    }).from(movies).where(and(eq(movies.mediaType, mediaType), inArray(movies.tmdbId, pageMovies.map((movie) => movie.tmdbId)))).all() : [];
-    const library = new Map(localMovies.map((movie) => [movie.tmdbId, movie]));
+    }).from(movies).where(and(eq(movies.mediaType, mediaType), or(inArray(movies.tmdbId, tmdbIds), inArray(movies.doubanId, doubanIds)))).all() : [];
+    const libraryTmdb = new Map(localMovies.filter(movie => movie.tmdbId).map(movie => [movie.tmdbId, movie]));
+    const libraryDouban = new Map(localMovies.filter(movie => movie.doubanId).map(movie => [movie.doubanId, movie]));
     const results = await Promise.all(pageMovies.map(async (movie) => {
-      const local = library.get(movie.tmdbId);
+      const local = (movie.tmdbId ? libraryTmdb.get(movie.tmdbId) : undefined) || (movie.doubanId ? libraryDouban.get(movie.doubanId) : undefined);
       const posterUrl = localPosterUrl(local ? local.posterUrl : movie.posterUrl);
       return {
         ...movie,
@@ -173,13 +201,13 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
     return c.json(result);
   });
 
-  async function catalogMovie(tmdbId: number, mediaType: MediaType): Promise<CatalogMovieDetails> {
-    const local = findExternalMovie("tmdb", mediaType, tmdbId);
+  async function catalogMovie(externalId: number, mediaType: MediaType, source: MetadataSource = "tmdb"): Promise<CatalogMovieDetails> {
+    const local = findExternalMovie(source, mediaType, externalId);
     let movie: CatalogMovieDetails;
     if (local) {
       const saved = serializeMovie(local);
       movie = {
-        tmdbId,
+        tmdbId: saved.tmdbId,
         mediaType,
         doubanId: saved.doubanId,
         episodeCount: saved.episodeCount,
@@ -195,18 +223,19 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
         libraryStatus: saved.status,
       };
     } else {
-      const metadata = await readMetadata("tmdb", mediaType, tmdbId);
+      const metadata = await readMetadata(source, mediaType, externalId);
+      const cast = source === "douban" ? await localizeCastImages(metadata.cast || [], posters) : metadata.cast || [];
       movie = {
-        tmdbId,
+        tmdbId: metadata.tmdbId ?? null,
         mediaType,
-        doubanId: null,
+        doubanId: metadata.doubanId ?? null,
         episodeCount: metadata.episodeCount ?? null,
         title: metadata.title,
         originalTitle: metadata.originalTitle || "",
         posterUrl: localPosterUrl(metadata.posterUrl),
         releaseDate: metadata.releaseDate ?? null,
         overview: metadata.overview || "",
-        cast: (metadata.cast || []).map((actor) => ({ ...actor, profileUrl: localActorImageUrl(actor.profileUrl) })),
+        cast: cast.map((actor) => ({ ...actor, profileUrl: localActorImageUrl(actor.profileUrl) })),
         magnetUrl: null,
         watchedAt: null,
         libraryMovieId: null,
@@ -217,6 +246,8 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
   }
   app.get("/api/catalog/movies/:tmdbId", async (c) => c.json({ movie: await catalogMovie(idSchema.parse(c.req.param("tmdbId")), "movie") }));
   app.get("/api/catalog/tv/:tmdbId", async (c) => c.json({ movie: await catalogMovie(idSchema.parse(c.req.param("tmdbId")), "tv") }));
+  app.get("/api/catalog/douban/movies/:id", async (c) => c.json({ movie: await catalogMovie(idSchema.parse(c.req.param("id")), "movie", "douban") }));
+  app.get("/api/catalog/douban/tv/:id", async (c) => c.json({ movie: await catalogMovie(idSchema.parse(c.req.param("id")), "tv", "douban") }));
 
   app.get("/api/movies", async (c) => {
     const { status, view, q, page, pageSize, mediaType } = listQuerySchema.parse(c.req.query());

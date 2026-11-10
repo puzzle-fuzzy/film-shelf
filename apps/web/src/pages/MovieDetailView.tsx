@@ -3,7 +3,7 @@ import type { MovieDetailData } from "@film-shelf/shared";
 import { Link, useLocation } from "react-router";
 import { ActorPhoto } from "../components/ActorPhoto";
 import { DetailPoster } from "../components/DetailPoster";
-import { nextNavigationState } from "../lib/navigation";
+import { actorLink, nextNavigationState } from "../lib/navigation";
 import "../detail.css";
 
 export function MovieDetailView({ movie, libraryMovieId, backTo, backState, backLabel = "返回片单" }: { movie: MovieDetailData; libraryMovieId?: number | null; backTo: string; backState?: unknown; backLabel?: string }) {
@@ -51,9 +51,9 @@ export function MovieDetailView({ movie, libraryMovieId, backTo, backState, back
                   {actor.character && <span className="detail-actor-role">饰 {actor.character}</span>}
                 </span>
               </>;
-              const hasPersonId = typeof actor.tmdbPersonId === "number" && Number.isSafeInteger(actor.tmdbPersonId) && actor.tmdbPersonId > 0;
-              return <li key={`${actor.tmdbPersonId || actor.name}-${index}`}>
-                {hasPersonId ? <Link className="detail-actor-item detail-actor-link" to={`/actors/${actor.tmdbPersonId}${movie.mediaType === "tv" ? "?mediaType=tv" : ""}`} state={nextNavigationState(location)} aria-label={`查看${actor.name}的参演作品`}>{content}</Link> : <span className="detail-actor-item">{content}</span>}
+              const actorTo = actorLink(actor, movie.mediaType);
+              return <li key={`${actor.tmdbPersonId || actor.doubanPersonId || actor.name}-${index}`}>
+                {actorTo ? <Link className="detail-actor-item detail-actor-link" to={actorTo} state={nextNavigationState(location)} aria-label={`查看${actor.name}的参演作品`}>{content}</Link> : <span className="detail-actor-item">{content}</span>}
               </li>;
             })}</ul> : <p className="detail-muted">暂无主演资料。</p>}
           </section>

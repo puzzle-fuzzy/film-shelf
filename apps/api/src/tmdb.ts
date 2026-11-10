@@ -8,6 +8,7 @@ export interface MovieMetadataProvider {
   search(query: string, mediaType?: MediaType): Promise<SearchMovie[]>;
   details(tmdbId: number, mediaType?: MediaType): Promise<MovieInput>;
   actorFilmography?(personId: number, mediaType?: MediaType): Promise<ActorFilmography>;
+  findByImdb?(imdbId: string, resource: MediaType | "person"): Promise<number | null>;
   posters?(tmdbId: number, mediaType?: MediaType): Promise<MetadataPoster[]>;
 }
 
@@ -113,6 +114,7 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
   const cachedDetails = createMetadataCache<MovieInput>();
   const cachedFilmography = createMetadataCache<ActorFilmography>();
   const cachedPosters = createMetadataCache<MetadataPoster[]>();
+  const cachedIdentities = createMetadataCache<number | null>();
   async function request<T>(path: string, params: Record<string, string>, schema: z.ZodType<T>, resource: "movie" | "tv" | "person" = "movie"): Promise<T> {
     if (!accessToken) throw new ApiException(503, "TMDB_NOT_CONFIGURED", "请先在项目 .env 中配置 TMDB_READ_ACCESS_TOKEN，然后重启服务。");
     const url = new URL(`https://api.themoviedb.org/3/${path}`);
@@ -146,6 +148,17 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
 
   return {
     configured: accessToken.length > 0,
+    async findByImdb(imdbId, resource) {
+      const pattern = resource === "person" ? /^nm[0-9]{1,16}$/ : /^tt[0-9]{1,16}$/;
+      if (!pattern.test(imdbId)) throw new ApiException(400, "INVALID_IMDB_ID", "IMDb 标识格式无效。");
+      return cachedIdentities(`${resource}:${imdbId}`, async () => {
+        const key = resource === "person" ? "person_results" : resource === "tv" ? "tv_results" : "movie_results";
+        const schema = z.object({ [key]: z.array(z.object({ id: z.number().int().positive().safe() })) });
+        const data = await request(`find/${imdbId}`, { external_source: "imdb_id" }, schema, resource);
+        const ids = new Set(data[key]!.map(item => item.id));
+        return ids.size === 1 ? [...ids][0]! : null;
+      });
+    },
     posters(tmdbId, mediaType = "movie") {
       if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) throw new ApiException(400, "INVALID_ID", "资料 ID 必须是正整数。");
       return cachedPosters(`${mediaType}:${tmdbId}`, async () => {

@@ -39,6 +39,7 @@ export interface MetadataSearchResult {
 
 export interface CastMember {
   tmdbPersonId?: number | null;
+  doubanPersonId?: number | null;
   name: string;
   character: string;
   profileUrl: string | null;
@@ -92,22 +93,31 @@ export interface SearchMovie {
 export type MovieDetailData = Pick<Movie, "title" | "originalTitle" | "posterUrl" | "releaseDate" | "overview" | "cast" | "watchedAt" | "magnetUrl" | "mediaType" | "episodeCount" | "tmdbId" | "doubanId">;
 
 export interface CatalogMovieDetails extends MovieDetailData {
-  tmdbId: number;
+  tmdbId: number | null;
   libraryMovieId: number | null;
   libraryStatus: MovieStatus | null;
 }
 
 export interface ActorSummary {
-  tmdbPersonId: number;
+  tmdbPersonId: number | null;
+  doubanPersonId?: number | null;
   name: string;
   profileUrl: string | null;
 }
 
-export interface ActorMovie extends SearchMovie {
+export interface ActorMovie extends Omit<SearchMovie, "tmdbId"> {
+  tmdbId: number | null;
+  doubanId?: number | null;
+  provider?: MetadataSource;
   character: string;
   libraryMovieId: number | null;
   libraryStatus: MovieStatus | null;
   posterVariants?: PosterVariant[];
+}
+
+export interface ActorFilmography {
+  actor: ActorSummary;
+  movies: Array<Omit<ActorMovie, "libraryMovieId" | "libraryStatus" | "posterVariants">>;
 }
 
 export interface ActorMovieList {

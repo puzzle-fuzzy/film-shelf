@@ -7,12 +7,12 @@ import { ApiRequestError, getCatalogMovie, getMovie } from "../lib/api";
 import { backNavigation, isPositiveId } from "../lib/navigation";
 import { MovieDetailView } from "./MovieDetailView";
 
-export function MovieRoute({ catalog = false, mediaType = "movie" }: { catalog?: boolean; mediaType?: MediaType }) {
+export function MovieRoute({ catalog = false, mediaType = "movie", provider = "tmdb" }: { catalog?: boolean; mediaType?: MediaType; provider?: "tmdb" | "douban" }) {
   const { id = "" } = useParams();
-  return <MoviePage key={`${catalog ? "catalog" : "library"}-${mediaType}-${id}`} id={id} catalog={catalog} mediaType={mediaType} />;
+  return <MoviePage key={`${catalog ? "catalog" : "library"}-${provider}-${mediaType}-${id}`} id={id} catalog={catalog} mediaType={mediaType} provider={provider} />;
 }
 
-function MoviePage({ id, catalog, mediaType }: { id: string; catalog: boolean; mediaType: MediaType }) {
+function MoviePage({ id, catalog, mediaType, provider }: { id: string; catalog: boolean; mediaType: MediaType; provider: "tmdb" | "douban" }) {
   const location = useLocation();
   const [movie, setMovie] = useState<Movie | CatalogMovieDetails | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +32,7 @@ function MoviePage({ id, catalog, mediaType }: { id: string; catalog: boolean; m
       setLoading(false);
       return () => controller.abort();
     }
-    const request = catalog ? getCatalogMovie(id, controller.signal, mediaType) : getMovie(id, controller.signal);
+    const request = catalog ? getCatalogMovie(id, controller.signal, mediaType, provider) : getMovie(id, controller.signal);
     request.then((result) => {
       if (!controller.signal.aborted) { setMovie(result); document.title = `${result.title} · Film Shelf`; }
     }).catch((failure: unknown) => {
@@ -41,7 +41,7 @@ function MoviePage({ id, catalog, mediaType }: { id: string; catalog: boolean; m
       else setError(failure instanceof Error ? failure.message : "影视详情暂时无法载入，请稍后重试。");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [id, catalog, mediaType, revision]);
+  }, [id, catalog, mediaType, provider, revision]);
 
   const status = movie && ("status" in movie ? movie.status : movie.libraryStatus);
   const back = backNavigation(location, status === "watched" ? "/#recently-watched" : "/");

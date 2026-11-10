@@ -152,8 +152,8 @@ test("backfills exact unambiguous names while preserving cast order and all exis
   expect(downloads).toEqual([source]);
 });
 
-test("retries an existing raw photo without refetching metadata and tolerates individual failures", async () => {
-  const movie = seed([{ name: "演员甲", character: "角色", profileUrl: source }]);
+test("retries an existing raw photo without refetching complete actor metadata and tolerates individual failures", async () => {
+  const movie = seed([{ name: "演员甲", doubanPersonId: 42, character: "角色", profileUrl: source }]);
   let attempts = 0;
   const posters = store(async () => {
     if (++attempts === 1) throw new Error("offline");
@@ -166,6 +166,31 @@ test("retries an existing raw photo without refetching metadata and tolerates in
   expect(database.db.select().from(movies).get()).toEqual({ ...movie, cast: [{ ...movie.cast[0]!, profileUrl: local }] });
   expect(await backfillDoubanCastImages(database.db, posters, noMetadata)).toEqual({ updated: 0 });
   expect(attempts).toBe(2);
+});
+
+test("backfills missing actor identities even after photos have been cached without changing existing IDs or viewing order", async () => {
+  const cast: CastMember[] = [
+    { name: "演员甲", character: "保留角色", profileUrl: local },
+    { name: "演员乙", doubanPersonId: 43, tmdbPersonId: 99, character: "", profileUrl: local },
+    { name: "同名演员", character: "", profileUrl: local },
+  ];
+  const movie = seed(cast);
+  let calls = 0;
+  const douban = provider(async (id, mediaType) => {
+    calls++;
+    return { doubanId: id, mediaType, title: movie.title, cast: [
+      { name: "演员甲", doubanPersonId: 42, character: "新角色", profileUrl: source },
+      { name: "演员乙", doubanPersonId: 999, character: "", profileUrl: source },
+      { name: "同名演员", doubanPersonId: 44, character: "", profileUrl: source },
+      { name: "同名演员", doubanPersonId: 45, character: "", profileUrl: source },
+    ] };
+  });
+  const posters = store(async () => { throw new Error("cached photo must remain"); });
+  expect(await backfillDoubanCastImages(database.db, posters, douban)).toEqual({ updated: 1 });
+  expect(database.db.select().from(movies).get()).toEqual({ ...movie, cast: [
+    { ...cast[0]!, doubanPersonId: 42 }, ...cast.slice(1),
+  ] });
+  expect(calls).toBe(1);
 });
 
 test("does not overwrite a concurrent cast edit while photos are being saved", async () => {

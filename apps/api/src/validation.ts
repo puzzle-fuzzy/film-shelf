@@ -50,6 +50,7 @@ export const movieInputSchema = z.object({
   overview: z.string().trim().max(20000).optional(),
   cast: z.array(z.object({
     tmdbPersonId: positiveInteger.nullable().optional(),
+    doubanPersonId: positiveInteger.nullable().optional(),
     name: z.string().trim().min(1).max(200),
     character: z.string().trim().max(300),
     profileUrl: actorPhotoUrl,
@@ -78,6 +79,7 @@ export const listQuerySchema = z.object({
   pageSize: queryInteger(100, "20"),
 });
 export const actorMoviesQuerySchema = z.object({
+  provider: metadataSourceSchema.default("tmdb"),
   mediaType: mediaTypeSchema.default("movie"),
   page: queryInteger(1000000, "1"),
   pageSize: queryInteger(100, "24"),

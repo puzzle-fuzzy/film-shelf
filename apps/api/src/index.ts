@@ -9,18 +9,26 @@ import { localizeExistingPosters } from "./localize-posters";
 import { createHomeHtmlRenderer } from "./home-html";
 import { backfillDoubanCastImages } from "./cast-images";
 import { createDoubanProvider } from "./douban";
+import { createTmdbProvider } from "./tmdb";
+import { backfillDoubanMovieIdentities } from "./douban-identities";
 
 const database = createDatabase();
 const posters = createPosterStore();
 const cached = await localizeExistingPosters(database.db, posters);
 if (cached.migrated) console.log(`Saved ${cached.migrated} existing movie posters locally.`);
 const douban = createDoubanProvider();
+const tmdb = createTmdbProvider();
 void backfillDoubanCastImages(database.db, posters, douban).then(({ updated }) => {
-  if (updated) console.log(`Saved cast photos for ${updated} existing library entries.`);
+  if (updated) console.log(`Updated cast metadata for ${updated} existing library entries.`);
 }).catch((error: unknown) => {
   console.warn("Could not complete cast photo backfill:", error instanceof Error ? error.name : "UnknownError");
 });
-const app = createApp({ db: database.db, posters, douban });
+void backfillDoubanMovieIdentities(database.db, douban, tmdb).then(({ updated }) => {
+  if (updated) console.log(`Linked ${updated} existing Douban entries to TMDB.`);
+}).catch((error: unknown) => {
+  console.warn("Could not link existing Douban entries:", error instanceof Error ? error.name : "UnknownError");
+});
+const app = createApp({ db: database.db, posters, douban, tmdb });
 
 function serveHome(path: string, indexPath: string) {
   const html = readFileSync(indexPath, "utf8");

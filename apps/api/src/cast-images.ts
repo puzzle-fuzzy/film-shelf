@@ -33,23 +33,29 @@ export async function backfillDoubanCastImages(db: MovieDatabase, posters: Poste
 
   for (const movie of existing) {
     let cast = movie.cast;
-    if (cast.some((actor) => !actor.profileUrl)) {
+    if (cast.some((actor) => !actor.profileUrl || (!actor.doubanPersonId && !actor.tmdbPersonId))) {
       try {
         const metadata = await douban.details(movie.doubanId!, movie.mediaType);
         if (metadata.doubanId !== movie.doubanId || metadata.mediaType !== movie.mediaType) {
           throw new Error("The refreshed cast belongs to a different work.");
         }
-        const profiles = new Map<string, string | null>();
+        const profiles = new Map<string, CastMember | null>();
         for (const actor of metadata.cast || []) {
-          const source = isDoubanActorImageSource(actor.profileUrl) ? actor.profileUrl : null;
-          profiles.set(actor.name, profiles.has(actor.name) ? null : source);
+          profiles.set(actor.name, profiles.has(actor.name) ? null : actor);
         }
         cast = cast.map((actor) => {
-          const source = profiles.get(actor.name);
-          return !actor.profileUrl && source ? { ...actor, profileUrl: source } : actor;
+          const refreshed = profiles.get(actor.name);
+          if (!refreshed) return actor;
+          const source = isDoubanActorImageSource(refreshed.profileUrl) ? refreshed.profileUrl : null;
+          const id = refreshed.doubanPersonId;
+          return {
+            ...actor,
+            ...(!actor.profileUrl && source ? { profileUrl: source } : {}),
+            ...(!actor.doubanPersonId && typeof id === "number" && Number.isSafeInteger(id) && id > 0 ? { doubanPersonId: id } : {}),
+          };
         });
       } catch (error) {
-        console.warn("Could not refresh actor photos:", movie.id, error instanceof Error ? error.name : "UnknownError");
+        console.warn("Could not refresh cast metadata:", movie.id, error instanceof Error ? error.name : "UnknownError");
       }
     }
 

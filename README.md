@@ -50,7 +50,7 @@ bun run dev
 3. 所有作品保存在同一张表格中，可筛选电影或电视剧，点击名称查看已保存的简介、上映或首播日期、主演及剧集集数。
 4. 看完后直接在表格的状态列切换为「已观影」，需要时可切回「推荐」。
 5. 添加电影时可填写磁力链接；已有电影点击「磁力链接」列或片名打开详情后，可编辑并保存链接，留空保存可清除。
-6. 用户端点击有 TMDB 人物 ID 的主演进入演员作品页，可切换电影或电视剧；作品按上映或首播日期倒序分页展示，并标记「推荐」「已观影」「未收录」。未收录 TMDB 作品也能查看只读详情，浏览不会自动加入片库。豆瓣演员首版只展示姓名，不通过同名猜测人物关联；录入和状态修改仍在管理端完成。
+6. 用户端点击主演进入演员作品页，可切换电影或电视剧；作品按上映或首播日期倒序分页展示，并标记「推荐」「已观影」「未收录」。豆瓣主演通过 IMDb 编号唯一关联 TMDB；没有对应记录时查询豆瓣参演作品。未收录作品也能查看只读详情，浏览不会自动加入片库。演员照片保存到本地，旧条目启动后会后台补齐演员身份。录入和状态修改仍在管理端完成。
 
 「已观影」片单按标记已观影的先后倒序展示，新标记的电影排在前面；编辑磁力链接或重复标记不会改变顺序。切回推荐后再次标记已观影，会作为新的记录排到前面。升级前已有影片保持原来的相对顺序。
 
@@ -87,8 +87,10 @@ bun run start
 | GET | `/api/movies?status=recommended&mediaType=tv&page=1&pageSize=20&q=片名` | 分页列表，status、mediaType 和 q 可省略；不传类型时返回全部作品 |
 | GET | `/api/movies/:id` | 查看电影详情 |
 | GET | `/api/actors/:id/movies?mediaType=tv&page=1&pageSize=24` | 通过 TMDB 演员 ID 查看参演作品，附带当前片库状态；类型默认 movie |
+| GET | `/api/actors/:id/movies?provider=douban&mediaType=tv` | 使用豆瓣演员 ID，优先精确关联 TMDB，未匹配时查询豆瓣参演作品 |
 | GET | `/api/catalog/movies/:tmdbId` | 只读电影详情；已收录时优先返回本地资料，否则获取 TMDB 资料，不新增片库记录 |
 | GET | `/api/catalog/tv/:tmdbId` | 对应的 TMDB 电视剧只读详情，与同号电影隔离 |
+| GET | `/api/catalog/douban/movies/:id`、`/api/catalog/douban/tv/:id` | 豆瓣作品只读详情，已收录时优先本地资料 |
 | PATCH | `/api/movies/:id/status` | `{ "status": "watched" }` 或 `{ "status": "recommended" }` |
 | PATCH | `/api/movies/:id/magnet` | `{ "magnetUrl": "magnet:?xt=urn:btih:…" }`；传入 null 或空白字符串可清除 |
 

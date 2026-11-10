@@ -15,7 +15,41 @@ interface NavigationLocation {
   state: unknown;
 }
 
-const movieDetailPath = /^\/(?:movies\/|catalog\/(?:movies|tv)\/)/;
+const movieDetailPath = /^\/(?:movies\/|catalog\/(?:douban\/)?(?:movies|tv)\/)/;
+
+type MediaProvider = "tmdb" | "douban";
+
+export function providerFromSearch(search: URLSearchParams): MediaProvider | undefined {
+  const value = search.get("provider");
+  return value === "tmdb" || value === "douban" ? value : undefined;
+}
+
+export function actorPageSearch(mediaType: MediaType, page: number, provider?: MediaProvider) {
+  const query = new URLSearchParams();
+  if (provider) query.set("provider", provider);
+  if (mediaType === "tv") query.set("mediaType", "tv");
+  if (page > 1) query.set("page", String(page));
+  return query;
+}
+
+function validNumericId(value: number | null | undefined): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+export function actorLink(actor: { tmdbPersonId?: number | null; doubanPersonId?: number | null }, mediaType: MediaType) {
+  const tmdb = validNumericId(actor.tmdbPersonId);
+  const id = tmdb ? actor.tmdbPersonId : actor.doubanPersonId;
+  if (!validNumericId(id)) return null;
+  const query = actorPageSearch(mediaType, 1, tmdb ? undefined : "douban").toString();
+  return `/actors/${id}${query ? `?${query}` : ""}`;
+}
+
+export function actorMoviePath(movie: { libraryMovieId: number | null; tmdbId: number | null; doubanId?: number | null; provider?: MediaProvider }, mediaType: MediaType) {
+  if (validNumericId(movie.libraryMovieId)) return `/movies/${movie.libraryMovieId}`;
+  const category = mediaType === "tv" ? "tv" : "movies";
+  if (validNumericId(movie.tmdbId)) return `/catalog/${category}/${movie.tmdbId}`;
+  return validNumericId(movie.doubanId) ? `/catalog/douban/${category}/${movie.doubanId}` : null;
+}
 
 export function mediaTypeFromSearch(search: URLSearchParams): MediaType | undefined {
   const value = search.get("mediaType");
@@ -48,7 +82,7 @@ export function safeInternalPath(value: unknown): string | null {
     }
     return value;
   }
-  const match = /^\/(recommended|watched|actors\/([1-9]\d*)|movies\/([1-9]\d*)|catalog\/(?:movies|tv)\/([1-9]\d*))(?:\?([^#]+))?$/.exec(value);
+  const match = /^\/(recommended|watched|actors\/([1-9]\d*)|movies\/([1-9]\d*)|catalog\/(?:douban\/)?(?:movies|tv)\/([1-9]\d*))(?:\?([^#]+))?$/.exec(value);
   if (!match) return null;
   const id = match[2] || match[3] || match[4];
   if (id && !isPositiveId(id)) return null;
@@ -57,7 +91,9 @@ export function safeInternalPath(value: unknown): string | null {
     const keys = new Set<string>();
     for (const [key, item] of new URLSearchParams(match[5])) {
       if (keys.has(key)) return null;
-      if (key === "mediaType" ? item !== "movie" && item !== "tv" : key !== "page" || !isPageNumber(item)) return null;
+      if (key === "provider") {
+        if (!match[2] || item !== "tmdb" && item !== "douban") return null;
+      } else if (key === "mediaType" ? item !== "movie" && item !== "tv" : key !== "page" || !isPageNumber(item)) return null;
       keys.add(key);
     }
   }

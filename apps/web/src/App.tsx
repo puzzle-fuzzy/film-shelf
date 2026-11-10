@@ -20,6 +20,8 @@ export default function App() {
           <Route path="/movies/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute /></Suspense>} />
           <Route path="/catalog/movies/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog /></Suspense>} />
           <Route path="/catalog/tv/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog mediaType="tv" /></Suspense>} />
+          <Route path="/catalog/douban/movies/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog provider="douban" /></Suspense>} />
+          <Route path="/catalog/douban/tv/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog mediaType="tv" provider="douban" /></Suspense>} />
           <Route path="/actors/:id" element={<Suspense fallback={null}><ActorRoute /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
