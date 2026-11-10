@@ -92,7 +92,7 @@ function MovieAdmin() {
       const result = await api<{ movie: Movie }>(`/api/movies/${movie.id}/status`, { method: "PATCH", body: JSON.stringify({ status }) });
       setDetail((current) => current?.id === movie.id ? result.movie : current);
       setRevision((value) => value + 1);
-      toast.success(status === "watched" ? `《${movie.title}》已标记为已观影` : `《${movie.title}》已移回推荐`);
+      toast.success(status === "watched" ? `《${movie.title}》已标记为已观影` : `《${movie.title}》已移回想看`);
     } catch (error) { toast.error(errorMessage(error)); }
     finally { setChangingId(null); }
   }
@@ -111,7 +111,7 @@ function MovieAdmin() {
           </div>
         </div>
       </SidebarInset>
-      <AddMovieDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} onAdded={(movie) => { setRevision((value) => value + 1); toast.success(`《${movie.title}》已加入推荐`); }} />
+      <AddMovieDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} onAdded={(movie) => { setRevision((value) => value + 1); toast.success(`《${movie.title}》已加入想看`); }} />
       <MovieDetailDialog movie={detail} onClose={() => setDetail(null)} onSaved={(movie, field) => { setDetail((current) => current?.id === movie.id ? movie : current); setRevision((value) => value + 1); toast.success(field === "poster" ? "主封面已保存" : "磁力链接已保存"); }} />
       <Toaster position="bottom-right" richColors closeButton />
     </SidebarProvider>

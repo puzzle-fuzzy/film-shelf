@@ -29,7 +29,7 @@ export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | 
                 <div className="grid gap-1"><span className="font-medium">{movie.mediaType === "tv" ? "首播日期" : "上映日期"}</span><span className="text-muted-foreground">{movie.releaseDate || "暂无资料"}</span></div>
                 {movie.mediaType === "tv" && movie.episodeCount && <p className="text-muted-foreground">共 {movie.episodeCount} 集</p>}
                 <div className="flex flex-wrap gap-3 text-xs">{Number.isSafeInteger(movie.tmdbId) && (movie.tmdbId || 0) > 0 && <a className="underline underline-offset-4" href={`https://www.themoviedb.org/${movie.mediaType === "tv" ? "tv" : "movie"}/${movie.tmdbId}`} target="_blank" rel="noreferrer">TMDB 条目</a>}{Number.isSafeInteger(movie.doubanId) && (movie.doubanId || 0) > 0 && <a className="underline underline-offset-4" href={`https://movie.douban.com/subject/${movie.doubanId}/`} target="_blank" rel="noreferrer">豆瓣条目</a>}</div>
-                <Badge variant="outline" className="w-fit">{movie.status === "watched" ? "已观影" : "推荐"}</Badge>
+                <Badge variant="outline" className="w-fit">{movie.status === "watched" ? "已观影" : "想看"}</Badge>
                 {movie.watchedAt && <p className="text-xs leading-5 text-muted-foreground">{new Intl.DateTimeFormat("zh-CN").format(new Date(movie.watchedAt))} 标记已观影</p>}
               </div>
             </div>

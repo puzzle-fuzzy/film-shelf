@@ -126,7 +126,7 @@ function MovieShelf({ status, shelf, page, pageSize, onPage }: {
 }) {
   const location = useLocation();
   const watched = status === "watched";
-  const title = watched ? "近日观影" : "推荐";
+  const title = watched ? "近日观影" : "想看";
   const Heading = watched ? "h2" : "h1";
   const sectionId = watched ? recentAnchor.slice(1) : "recommended";
   const { data, previous, error, retry } = shelf;
@@ -172,8 +172,8 @@ function MovieShelf({ status, shelf, page, pageSize, onPage }: {
         </div>
       ) : (
         <div className="empty-state">
-          <FilmIcon /><h3>{watched ? "还没有已观影的作品" : "还没有推荐作品"}</h3>
-          <p>{watched ? "看过的作品会展示在这里。" : "片单中暂时没有推荐的作品。"}</p>
+          <FilmIcon /><h3>{watched ? "还没有已观影的作品" : "还没有想看的作品"}</h3>
+          <p>{watched ? "看过的作品会展示在这里。" : "想看的作品会展示在这里。"}</p>
         </div>
       )}
       {shown && pages > 1 && !error && (
