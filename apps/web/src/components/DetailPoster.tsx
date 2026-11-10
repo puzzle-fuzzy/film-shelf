@@ -91,7 +91,15 @@ function PosterGallery({ gallery, title, onDismiss }: { gallery: MoviePosterList
       {loading && <p className="poster-gallery-feedback">正在加载海报…</p>}
       {failed && <div className="poster-gallery-feedback"><p role="alert">这张海报未能加载。</p><button type="button" className="outline-button" onClick={() => { setFailed(false); setLoading(true); setAttempt((value) => value + 1); }}>重试图片</button></div>}
     </div>
-    <div className="poster-gallery-controls"><button type="button" className="outline-button" disabled={gallery.posters.length < 2} onClick={() => choose(index - 1)} aria-label="上一张海报">← 上一张</button><span role="status" aria-atomic="true">{index + 1} / {gallery.posters.length}</span><button type="button" className="outline-button" disabled={gallery.posters.length < 2} onClick={() => choose(index + 1)} aria-label="下一张海报">下一张 →</button></div>
+    <div className="poster-gallery-controls">
+      <button type="button" className="outline-button poster-gallery-previous" disabled={gallery.posters.length < 2} onClick={() => choose(index - 1)} aria-label="上一张海报">
+        <span aria-hidden="true">←</span><span className="poster-gallery-nav-label">上一张</span>
+      </button>
+      <span role="status" aria-atomic="true">{index + 1} / {gallery.posters.length}</span>
+      <button type="button" className="outline-button poster-gallery-next" disabled={gallery.posters.length < 2} onClick={() => choose(index + 1)} aria-label="下一张海报">
+        <span className="poster-gallery-nav-label">下一张</span><span aria-hidden="true">→</span>
+      </button>
+    </div>
     <ul className="poster-gallery-thumbnails" role="list">{gallery.posters.map((poster, position) => <li key={poster.id}><button type="button" aria-label={`查看第 ${position + 1} 张海报`} aria-pressed={position === index} onClick={() => choose(position)}><img src={poster.url} srcSet={posterSrcSet(poster.posterVariants)} sizes="44px" alt="" loading="lazy" onError={(event) => { if (event.currentTarget.srcset) event.currentTarget.removeAttribute("srcset"); }} /></button></li>)}</ul>
   </dialog>;
 }
