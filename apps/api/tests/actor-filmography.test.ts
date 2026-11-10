@@ -31,6 +31,7 @@ let actorCalls: number[];
 let actorFailure: ApiException | undefined;
 let detail: MovieInput;
 let provider: MovieMetadataProvider;
+let variantJobs: Promise<void>[];
 
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "film-shelf-filmography-"));
@@ -41,6 +42,7 @@ beforeEach(() => {
   detailCalls = [];
   actorCalls = [];
   actorFailure = undefined;
+  variantJobs = [];
   detail = {
     tmdbId: 77, title: "片库以外的电影", originalTitle: "An Uncollected Movie", posterUrl: cover(77),
     releaseDate: "2020-03-04", overview: "尚未加入片库的作品简介",
@@ -62,10 +64,17 @@ beforeEach(() => {
     if (failedCovers.has(source)) throw new TypeError("Image unavailable in test");
     return new Response(png, { headers: { "content-type": "image/png" } });
   } });
+  const ensureVariants = posters.ensureVariants;
+  posters.ensureVariants = (source) => {
+    const pending = ensureVariants(source);
+    variantJobs.push(pending);
+    return pending;
+  };
   app = createApp({ db: database.db, tmdb: provider, posters });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(variantJobs);
   database.close();
   rmSync(directory, { recursive: true, force: true });
 });

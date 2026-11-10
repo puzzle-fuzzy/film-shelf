@@ -92,6 +92,7 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
   const inFlight = new Map<string, Promise<string>>();
   const variantJobs = new Map<string, Promise<void>>();
   const generateVariants = createPosterVariantGenerator();
+  let variantQueue = Promise.resolve();
 
   async function readPoster(filename: string): Promise<Uint8Array<ArrayBuffer> | null> {
     if (!filenamePattern.test(filename)) return null;
@@ -168,7 +169,26 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
 
   return {
     async variants(source: string | null) {
-      const original = source && LOCAL_POSTER_PATH_PATTERN.exec(source)?.[1];
+      let original = source && LOCAL_POSTER_PATH_PATTERN.exec(source)?.[1];
+      if (!original && source) {
+        const tmdbPreview = LOCAL_TMDB_POSTER_PATH_PATTERN.exec(source);
+        let remote: string | undefined;
+        if (tmdbPreview) remote = `${tmdbImageBase}${tmdbPreview[1]}`;
+        else if (source.startsWith("/api/posters/douban/")) {
+          try { remote = doubanPosterSource(source); } catch { return undefined; }
+        }
+        if (remote) {
+          const hash = createHash("sha256").update(remote).digest("hex");
+          for (const extension of Object.keys(types) as ImageExtension[]) {
+            const filename = `${hash}.${extension}`;
+            const info = await lstat(join(directory, filename)).catch(() => null);
+            if (info?.isFile() && info.size > 0 && info.size <= maxImageBytes) {
+              original = filename;
+              break;
+            }
+          }
+        }
+      }
       return original ? findPosterVariants(original, directory, maxImageBytes) : undefined;
     },
     async ensureVariants(source: string | null): Promise<void> {
@@ -176,11 +196,12 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
       if (!original || !generateVariants) return;
       const active = variantJobs.get(original);
       if (active) return active;
-      const pending = generateVariants(original, directory, directory, maxImageBytes)
+      const pending = variantQueue.then(() => generateVariants(original, directory, directory, maxImageBytes))
         .then(() => undefined)
         .catch((error: unknown) => console.warn(`Could not generate poster variants for ${original}:`, error))
         .finally(() => variantJobs.delete(original));
       variantJobs.set(original, pending);
+      variantQueue = pending;
       return pending;
     },
     async save(source: string | null | undefined): Promise<string | null> {

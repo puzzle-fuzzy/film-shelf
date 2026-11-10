@@ -123,6 +123,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
     const local = await posters.save(path);
     const cached = local && LOCAL_POSTER_PATH_PATTERN.exec(local);
     if (!cached) throw new ApiException(502, "POSTER_UNAVAILABLE", "海报暂时无法读取，请稍后重试。");
+    void posters.ensureVariants(local).catch((error: unknown) => console.warn("Could not prepare preview poster variants:", error instanceof Error ? error.name : "UnknownError"));
     return posters.respond(cached[1]!);
   });
   app.get("/api/posters/douban/:encoded", async (c) => {
@@ -130,6 +131,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
     const local = await posters.save(source);
     const cached = local && LOCAL_POSTER_PATH_PATTERN.exec(local);
     if (!cached) throw new ApiException(502, "POSTER_UNAVAILABLE", "海报暂时无法读取，请稍后重试。");
+    void posters.ensureVariants(local).catch((error: unknown) => console.warn("Could not prepare preview poster variants:", error instanceof Error ? error.name : "UnknownError"));
     return posters.respond(cached[1]!);
   });
   app.get("/api/actors/image/:filename", async (c) => {

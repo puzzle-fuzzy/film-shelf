@@ -46,6 +46,17 @@ let posters: ReturnType<typeof createPosterStore>;
 let app: ReturnType<typeof createApp>;
 let downloads: string[];
 let offline: boolean;
+let variantJobs: Promise<void>[];
+
+function trackVariantJobs(store: ReturnType<typeof createPosterStore>) {
+  const ensureVariants = store.ensureVariants;
+  store.ensureVariants = (source) => {
+    const pending = ensureVariants(source);
+    variantJobs.push(pending);
+    return pending;
+  };
+  return store;
+}
 
 beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), "film-shelf-local-posters-"));
@@ -53,18 +64,20 @@ beforeEach(() => {
   database = createDatabase(databasePath);
   downloads = [];
   offline = false;
-  posters = createPosterStore({
+  variantJobs = [];
+  posters = trackVariantJobs(createPosterStore({
     directory: join(directory, "posters"),
     fetcher: async (input) => {
       downloads.push(String(input));
       if (offline) throw new TypeError("The image host is offline");
       return new Response(png, { headers: { "content-type": "image/png" } });
     },
-  });
+  }));
   app = createApp({ db: database.db, tmdb: providerFor(), posters });
 });
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(variantJobs);
   database.close();
   rmSync(directory, { recursive: true, force: true });
 });
@@ -123,13 +136,13 @@ describe("local poster integration", () => {
     const original = posterPng();
     const posterDirectory = join(directory, "posters");
     const manualSource = "https://image.tmdb.org/t/p/w500/manual-poster-test.png";
-    const realPosters = createPosterStore({
+    const realPosters = trackVariantJobs(createPosterStore({
       directory: posterDirectory,
       fetcher: async (input) => {
         downloads.push(String(input));
         return new Response(original, { headers: { "content-type": "image/png" } });
       },
-    });
+    }));
     app = createApp({ db: database.db, tmdb: providerFor(), posters: realPosters });
 
     const preview = await app.request(previewPoster);
@@ -301,10 +314,10 @@ describe("local poster integration", () => {
     database.close();
     database = createDatabase(databasePath);
     offline = true;
-    const offlinePosters = createPosterStore({
+    const offlinePosters = trackVariantJobs(createPosterStore({
       directory: join(directory, "posters"),
       fetcher: async () => { throw new TypeError("No network allowed after restart"); },
-    });
+    }));
     app = createApp({ db: database.db, tmdb: providerFor(), posters: offlinePosters });
     expect((await localizeExistingPosters(database.db, offlinePosters)).migrated).toBe(0);
     const detail = await (await app.request("/api/movies/1")).json();

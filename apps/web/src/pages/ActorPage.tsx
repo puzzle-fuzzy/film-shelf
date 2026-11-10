@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
-import type { ActorMovieList, MovieStatus } from "@film-shelf/shared";
+import type { ActorMovieList, ActorSummary, MovieStatus } from "@film-shelf/shared";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import { ActorPhoto } from "../components/ActorPhoto";
+import { ActorWorksSkeleton } from "../components/ActorLoading";
 import { FilmIcon } from "../components/FilmIcon";
 import { Poster } from "../components/Poster";
 import { ApiRequestError, getActorMovies } from "../lib/api";
@@ -12,7 +13,15 @@ import "../actor.css";
 export function ActorRoute() {
   const { id = "" } = useParams();
   const location = useLocation();
-  return <ActorPage key={`${id}:${location.search}`} id={id} />;
+  const provider = providerFromSearch(new URLSearchParams(location.search)) || "tmdb";
+  return <ActorPage key={`${provider}:${id}`} id={id} />;
+}
+
+interface ActorRequestResult {
+  query: string;
+  data: ActorMovieList | null;
+  error: string | null;
+  notFound: boolean;
 }
 
 function ActorPage({ id }: { id: string }) {
@@ -21,59 +30,60 @@ function ActorPage({ id }: { id: string }) {
   const page = pageFromSearch(searchParams);
   const mediaType = mediaTypeFromSearch(searchParams) || "movie";
   const provider = providerFromSearch(searchParams);
-  const [data, setData] = useState<ActorMovieList | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [notFound, setNotFound] = useState(false);
+  const [actor, setActor] = useState<ActorSummary | null>(null);
+  const [result, setResult] = useState<ActorRequestResult | null>(null);
   const [revision, setRevision] = useState(0);
+  const query = `${location.key}:${mediaType}:${page}:${revision}`;
+  const current = result?.query === query ? result : null;
+  const data = current?.data || null;
+  const loading = !current;
+  const error = current?.error;
+  const notFound = current?.notFound;
   const back = backNavigation(location);
   const pages = Math.max(1, Math.ceil((data?.total || 0) / (data?.pageSize || 24)));
 
+  useEffect(() => { document.title = actor ? `${actor.name}的参演作品 · Film Shelf` : "参演作品 · Film Shelf"; }, [actor]);
+
   useEffect(() => {
     const controller = new AbortController();
-    document.title = "参演作品 · Film Shelf";
-    setLoading(true);
-    setError(null);
-    setNotFound(false);
-    setData(null);
     if (!isPositiveId(id)) {
-      setNotFound(true);
-      setLoading(false);
+      setResult({ query, data: null, error: null, notFound: true });
       return () => controller.abort();
     }
     getActorMovies(id, page, controller.signal, mediaType, provider).then((result) => {
       if (controller.signal.aborted) return;
+      setActor(result.actor);
       const finalPage = Math.max(1, Math.ceil(result.total / result.pageSize));
       if (page > finalPage) changePage(finalPage, true);
-      else { setData(result); document.title = `${result.actor.name}的参演作品 · Film Shelf`; }
+      else setResult({ query, data: result, error: null, notFound: false });
     }).catch((failure: unknown) => {
       if (controller.signal.aborted) return;
-      if (failure instanceof ApiRequestError && failure.status === 404) setNotFound(true);
-      else setError(failure instanceof Error ? failure.message : "参演作品暂时无法载入，请稍后重试。");
-    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+      if (failure instanceof ApiRequestError && failure.status === 404) setResult({ query, data: null, error: null, notFound: true });
+      else setResult({ query, data: null, error: failure instanceof Error ? failure.message : "参演作品暂时无法载入，请稍后重试。", notFound: false });
+    });
     return () => controller.abort();
-  }, [id, page, mediaType, provider, revision]);
+  }, [id, page, mediaType, provider, query]);
 
   function changePage(nextPage: number, replace = false) {
     const next = actorPageSearch(mediaType, nextPage, provider);
     setSearchParams(next, { replace, state: location.state });
   }
 
-  return <section className="actor-page">
+  return <section className={`actor-page${!actor && loading ? " actor-loading" : ""}`}>
     <Link to={back.to} state={back.state} className="detail-back">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="m14 6-6 6 6 6M8 12h12" /></svg>
       {back.label}
     </Link>
     <div className="page-heading actor-page-heading">
       <div className="actor-identity">
-        {data ? <ActorPhoto src={data.actor.profileUrl} name={data.actor.name} /> : loading ? <span className="actor-photo-skeleton" aria-hidden="true" /> : null}
-        <div><h1>{data?.actor.name || "参演作品"}</h1>{data && <p>参演作品</p>}</div>
+        {actor ? <ActorPhoto src={actor.profileUrl} name={actor.name} priority /> : loading ? <span className="actor-photo-skeleton" aria-hidden="true" /> : null}
+        <div><h1>{actor?.name || "参演作品"}</h1>{actor && <p>参演作品</p>}</div>
       </div>
       <span className="movie-count" role="status">{data ? `${data.total} 部作品` : loading ? "载入中…" : ""}</span>
     </div>
-    <fieldset className="media-filter actor-media-filter"><legend>参演类型</legend>{(["movie", "tv"] as const).map((value) => <label key={value}><input type="radio" name="actor-media-type" checked={mediaType === value} onChange={() => { setData(null); setLoading(true); setSearchParams(actorPageSearch(value, 1, provider), { state: location.state }); }} />{value === "tv" ? "电视剧" : "电影"}</label>)}</fieldset>
-    <div className="library" aria-label={data ? `${data.actor.name}的参演作品` : "参演作品"} aria-busy={loading}>
-      {notFound ? <div className="empty-state"><FilmIcon /><h2>没有找到这位演员</h2><p>演员资料可能不存在，请返回继续浏览。</p></div> : error ? <div className="empty-state" role="alert"><FilmIcon /><h2>参演作品暂时无法载入</h2><p>{error}</p><button type="button" className="outline-button" onClick={() => setRevision((value) => value + 1)}>重新加载</button></div> : loading ? <div className="movie-grid" aria-label="正在载入参演作品">{Array.from({ length: 6 }, (_, index) => <div key={index} className="card-skeleton" aria-hidden="true"><span /><i /><i /></div>)}</div> : data?.movies.length ? <div className="movie-grid">{data.movies.map((movie, index) => {
+    <fieldset className="media-filter actor-media-filter"><legend>参演类型</legend>{(["movie", "tv"] as const).map((value) => <label key={value}><input type="radio" name="actor-media-type" checked={mediaType === value} onChange={() => { setSearchParams(actorPageSearch(value, 1, provider), { state: location.state }); }} />{value === "tv" ? "电视剧" : "电影"}</label>)}</fieldset>
+    <div className="library" aria-label={actor ? `${actor.name}的参演作品` : "参演作品"} aria-busy={loading}>
+      {notFound ? <div className="empty-state"><FilmIcon /><h2>没有找到这位演员</h2><p>演员资料可能不存在，请返回继续浏览。</p></div> : error ? <div className="empty-state" role="alert"><FilmIcon /><h2>参演作品暂时无法载入</h2><p>{error}</p><button type="button" className="outline-button" onClick={() => setRevision((value) => value + 1)}>重新加载</button></div> : loading ? <ActorWorksSkeleton /> : data?.movies.length ? <div className="movie-grid">{data.movies.map((movie, index) => {
         const pathname = actorMoviePath(movie, mediaType);
         if (!pathname) return null;
         return <Link

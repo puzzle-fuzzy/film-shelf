@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef } from "react";
 import { Navigate, Route, Routes, useLocation } from "react-router";
 import { HomePage, LegacyLibraryRedirect, recentAnchor } from "./pages/HomePage";
 import { MovieLoading } from "./components/MovieLoading";
+import { ActorLoading } from "./components/ActorLoading";
 import { ThemeToggle } from "./components/ThemeToggle";
 
 const MovieRoute = lazy(() => import("./pages/MoviePage").then(({ MovieRoute }) => ({ default: MovieRoute })));
@@ -22,7 +23,7 @@ export default function App() {
           <Route path="/catalog/tv/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog mediaType="tv" /></Suspense>} />
           <Route path="/catalog/douban/movies/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog provider="douban" /></Suspense>} />
           <Route path="/catalog/douban/tv/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog mediaType="tv" provider="douban" /></Suspense>} />
-          <Route path="/actors/:id" element={<Suspense fallback={null}><ActorRoute /></Suspense>} />
+          <Route path="/actors/:id" element={<Suspense fallback={<ActorLoading />}><ActorRoute /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
