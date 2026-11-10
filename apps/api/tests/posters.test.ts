@@ -3,7 +3,7 @@ import { mkdtemp, readdir, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createHash } from "node:crypto";
-import { createPosterStore } from "../src/posters";
+import { createPosterStore, isDoubanActorImageSource } from "../src/posters";
 
 const jpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 0xff, 0xd9]);
 const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0]);
@@ -15,6 +15,39 @@ beforeEach(async () => { directory = await mkdtemp(join(tmpdir(), "film-shelf-po
 afterEach(async () => { await rm(directory, { recursive: true, force: true }); });
 
 describe("persistent local poster storage", () => {
+  test("saves only trusted Douban celebrity photos locally with the required image referer", async () => {
+    let calls = 0;
+    const store = createPosterStore({ directory, fetcher: async (_source, options) => {
+      calls++;
+      expect(new Headers(options?.headers).get("Referer")).toBe("https://movie.douban.com/");
+      return new Response(jpeg, { headers: { "Content-Type": "image/jpeg" } });
+    } });
+    const valid = [
+      "https://img3.doubanio.com/view/personage/m/public/9857d63a35c38fdd324cd0f6af2d0f13.jpg",
+      "https://img9.doubanio.com/view/celebrity/m/public/p1552642864.34.jpg",
+      "https://img3.doubanio.com/view/celebrity/m/public/p_7aSrpchoO4cel_avatar_uploaded1584272321.53.jpg",
+    ];
+    for (const url of valid) {
+      expect(isDoubanActorImageSource(url)).toBe(true);
+      const local = await store.save(url);
+      expect(local).toMatch(/^\/api\/posters\/[a-f0-9]{64}\.jpg$/);
+      const response = await store.respond(local!.split("/").at(-1)!);
+      expect(new Uint8Array(await response.arrayBuffer())).toEqual(jpeg);
+    }
+    for (const url of [
+      "https://img3.doubanio.com.evil.test/view/celebrity/m/public/p1.jpg",
+      "https://img3.doubanio.com:444/view/celebrity/m/public/p1.jpg",
+      "http://img3.doubanio.com/view/celebrity/m/public/p1.jpg",
+      "https://img3.doubanio.com/view/celebrity/m/public/../p1.jpg",
+      "https://img3.doubanio.com/view/celebrity/m/public/p1.jpg?redirect=http://127.0.0.1/",
+      "https://img3.doubanio.com/view/celebrity/m/public/p1.jpg\n",
+    ]) {
+      expect(isDoubanActorImageSource(url)).toBe(false);
+      await expect(store.save(url)).rejects.toMatchObject({ status: 400, code: "POSTER_URL_INVALID" });
+    }
+    expect(calls).toBe(valid.length);
+  });
+
   test("downloads once, serves correct image bytes and survives an offline reopened store", async () => {
     let calls = 0;
     const store = createPosterStore({ directory, fetcher: async (_url, options) => {

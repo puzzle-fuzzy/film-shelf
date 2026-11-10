@@ -8,10 +8,47 @@ async function factory(fetcher: typeof fetch) {
 }
 
 describe("Douban anonymous metadata boundary", () => {
+  test("enriches the subject cast from complete celebrities while preserving names and filtering photo sources", async () => {
+    const profile = "https://img3.doubanio.com/view/personage/m/public/9857d63a35c38fdd324cd0f6af2d0f13.jpg";
+    const fallback = "https://img9.doubanio.com/view/celebrity/m/public/p1552642864.34.jpg";
+    const names = ["具教焕", "高允贞", "缺图演员", "同名演员", "无资料演员"];
+    const paths: string[] = [];
+    const provider = await factory((async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+      const path = new URL(String(input)).pathname;
+      paths.push(path);
+      if (!path.endsWith("/celebrities")) return Response.json({ ...show, actors: names.map(name => ({ name })) });
+      expect(new Headers(init?.headers).get("Referer")).toBe("https://m.douban.com/movie/subject/27602137/");
+      return Response.json({ actors: [
+        { name: "具教焕", avatar: { large: profile } },
+        { name: "高允贞", avatar: { large: "https://example.com/untrusted.jpg", normal: fallback } },
+        { name: "缺图演员", avatar: { large: "https://img3.doubanio.com.evil.test/view/personage/m/public/a.jpg" } },
+        { name: "同名演员", avatar: { large: profile } },
+        { name: "同名演员", avatar: { large: fallback } },
+        { name: "不在主演名单", avatar: { large: profile } },
+      ] });
+    }) as typeof fetch);
+    const result = await provider.details(27602137, "tv");
+    expect(result.cast?.map(actor => actor.name)).toEqual(names);
+    expect(result.cast?.map(actor => actor.profileUrl)).toEqual([profile, fallback, null, null, null]);
+    expect(result.cast?.every(actor => actor.character === "" && !actor.tmdbPersonId)).toBe(true);
+    expect(paths).toEqual(["/rexxar/api/v2/tv/27602137", "/rexxar/api/v2/tv/27602137/celebrities"]);
+  });
+
+  test("preserves subject metadata when optional actor photos are unavailable", async () => {
+    const provider = await factory((async (input: Parameters<typeof fetch>[0]) => {
+      if (new URL(String(input)).pathname.endsWith("/celebrities")) return new Response("verification", { status: 403 });
+      return Response.json(show);
+    }) as typeof fetch);
+    expect(await provider.details(27602137, "tv")).toMatchObject({
+      title: show.title, cast: [{ name: "李知恩", character: "", profileUrl: null }],
+    });
+  });
+
   test("imports My Mister with the full-resolution image, date, 16 episodes and names without TMDB IDs", async () => {
     const provider = await factory((async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
       const url = new URL(String(input));
       expect(url.origin).toBe("https://m.douban.com");
+      if (url.pathname.endsWith("/celebrities")) return Response.json({ actors: [] });
       expect(url.pathname).toBe("/rexxar/api/v2/tv/27602137");
       const headers = new Headers(init?.headers);
       expect(headers.get("User-Agent")).toBeTruthy();
@@ -53,7 +90,7 @@ describe("Douban anonymous metadata boundary", () => {
     const provider = await factory((async (input: Parameters<typeof fetch>[0]) => {
       started++;
       await gate;
-      return Response.json(new URL(String(input)).pathname.endsWith("search/movie") ? { items: [] } : show);
+      return Response.json(new URL(String(input)).pathname.endsWith("search/movie") ? { items: [] } : { ...show, actors: [] });
     }) as unknown as typeof fetch);
     const detail = provider.details(27602137, "tv");
     const duplicate = provider.details(27602137, "tv");
@@ -189,7 +226,7 @@ describe("Douban anonymous metadata boundary", () => {
       [new Response("missing", { status: 404 }), 404, "DOUBAN_NOT_FOUND"],
     ] as const) {
       let calls = 0;
-      const provider = await factory((async () => ++calls === 1 ? response : Response.json(show)) as unknown as typeof fetch);
+      const provider = await factory((async () => ++calls === 1 ? response : Response.json({ ...show, actors: [] })) as unknown as typeof fetch);
       await expect(provider.details(27602137, "tv")).rejects.toMatchObject({ status, code });
       expect((await provider.details(27602137, "tv")).title).toBe("我的大叔");
       expect(calls).toBe(2);
@@ -204,7 +241,7 @@ describe("Douban anonymous metadata boundary", () => {
       const id = Number(new URL(String(input)).pathname.split("/").at(-1));
       ids.push(id);
       await gate;
-      return Response.json({ ...show, id });
+      return Response.json({ ...show, id, actors: [] });
     }) as unknown as typeof fetch);
     const pending = [provider.details(27602137, "tv"), provider.details(27602137, "tv")];
     expect(ids).toEqual([27602137]);

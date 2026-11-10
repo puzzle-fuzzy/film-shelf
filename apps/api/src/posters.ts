@@ -17,6 +17,7 @@ export const LOCAL_TMDB_POSTER_PATH_PATTERN = new RegExp(`^/api/posters/tmdb/${t
 export const LOCAL_DOUBAN_POSTER_PATH_PATTERN = /^\/api\/posters\/douban\/([A-Za-z0-9_-]{1,2048})(?![\s\S])/;
 const doubanStaticSourcePattern = /^https:\/\/img(?:1|2|3|9)\.doubanio\.com\/view\/photo\/(?:s_ratio_poster|m_ratio_poster|l|large|raw)\/public\/p[1-9][0-9]{0,19}\.(?:jpg|png|webp)$/;
 const doubanSignedSourcePattern = /^https:\/\/qnmob[123]-sign\.doubanio\.com\/view\/photo\/large\/public\/p[1-9][0-9]{0,19}\.jpg\?sa_cv=[a-f0-9]{32}&sa_ct=[a-f0-9]{8}&imageView2\/0\/q\/80\/w\/9999\/h\/120\/format\/jpg$/;
+const doubanActorSourcePattern = /^https:\/\/img[1239]\.doubanio\.com\/view\/(?:celebrity|personage)\/m\/public\/[A-Za-z0-9_-][A-Za-z0-9_.-]{0,159}\.(?:jpg|png|webp)$/;
 const filenamePattern = /^[a-f0-9]{64}\.(jpg|png|webp)$/;
 const types = { jpg: "image/jpeg", png: "image/png", webp: "image/webp" } as const;
 type ImageExtension = keyof typeof types;
@@ -24,6 +25,10 @@ type PosterFetcher = (...args: Parameters<typeof fetch>) => ReturnType<typeof fe
 
 function invalidSource() {
   return new ApiException(400, "POSTER_URL_INVALID", "海报地址必须是受信任的 TMDB、豆瓣图片地址或本地海报地址。");
+}
+
+export function isDoubanActorImageSource(source: string | null | undefined): boolean {
+  return typeof source === "string" && doubanActorSourcePattern.test(source) && !/[\s\\%]/.test(source);
 }
 
 function isDoubanSource(source: string): boolean {
@@ -41,7 +46,7 @@ export function doubanPosterSource(localPath: string): string {
 }
 
 function remoteSource(source: string) {
-  if (isDoubanSource(source)) return source;
+  if (isDoubanSource(source) || isDoubanActorImageSource(source)) return source;
   let url: URL;
   try { url = new URL(source); } catch { throw invalidSource(); }
   const rawPath = source.match(/^https:\/\/[^/]+(\/[^?#]*)/i)?.[1];
@@ -64,6 +69,7 @@ export function localPosterUrl(source: string | null | undefined): string | null
       return path;
     }
     const remote = remoteSource(path);
+    if (isDoubanActorImageSource(remote)) return null;
     if (isDoubanSource(remote)) return `/api/posters/douban/${Buffer.from(remote).toString("base64url")}`;
     return `/api/posters/tmdb/${remote.slice(tmdbImageBase.length)}`;
   } catch {
@@ -114,7 +120,7 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
       response = await fetcher(source, {
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
-        headers: { Accept: "image/jpeg, image/png, image/webp", ...(isDoubanSource(source) ? { Referer: "https://movie.douban.com/" } : {}) },
+        headers: { Accept: "image/jpeg, image/png, image/webp", ...(isDoubanSource(source) || isDoubanActorImageSource(source) ? { Referer: "https://movie.douban.com/" } : {}) },
       });
       if (!response.ok) throw new ApiException(502, "POSTER_DOWNLOAD_FAILED", "海报下载失败，请稍后重试。");
       const mime = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();

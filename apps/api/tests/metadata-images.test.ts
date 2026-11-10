@@ -6,6 +6,51 @@ import { createApp } from "../src/app";
 import { createDatabase } from "../src/db";
 import { createPosterStore } from "../src/posters";
 
+test("Douban imports persist actor photos and detail responses keep using local files offline", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "film-shelf-douban-actors-"));
+  const database = createDatabase(":memory:");
+  const photo = "https://img3.doubanio.com/view/personage/m/public/9857d63a35c38fdd324cd0f6af2d0f13.jpg";
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=", "base64");
+  const downloads: string[] = [];
+  const posters = createPosterStore({ directory, fetcher: async (input) => {
+    downloads.push(String(input));
+    return new Response(png, { headers: { "Content-Type": "image/png" } });
+  } });
+  const douban = {
+    configured: true,
+    async search() { return []; },
+    async details() {
+      return { doubanId: 37335468, mediaType: "tv" as const, title: "努力克服自卑的我们", cast: [
+        { name: "具教焕", character: "", profileUrl: photo },
+        { name: "缺图演员", character: "", profileUrl: null },
+      ] };
+    },
+  };
+  try {
+    const app = createApp({ db: database.db, posters, douban, tmdbToken: "" });
+    const imported = await app.request("/api/movies/import", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "douban", mediaType: "tv", externalId: 37335468 }),
+    });
+    expect(imported.status).toBe(201);
+    const movie = (await imported.json()).movie;
+    const local = movie.cast[0].profileUrl;
+    expect(local).toMatch(/^\/api\/posters\/[a-f0-9]{64}\.png$/);
+    expect(movie.cast[1].profileUrl).toBeNull();
+    expect(downloads).toEqual([photo]);
+    const offline = createApp({
+      db: database.db, tmdbToken: "",
+      posters: createPosterStore({ directory, fetcher: async () => { throw new Error("offline"); } }),
+    });
+    const detail = await (await offline.request(`/api/movies/${movie.id}`)).json();
+    expect(detail.movie.cast).toEqual(movie.cast);
+    expect(Buffer.from(await (await offline.request(local)).arrayBuffer())).toEqual(png);
+  } finally {
+    database.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test("Douban search previews are lazy, import persists the cover, and forged preview URLs never fetch", async () => {
   const directory = mkdtempSync(join(tmpdir(), "film-shelf-douban-flow-"));
   const database = createDatabase(":memory:");

@@ -7,12 +7,20 @@ import { createDatabase, projectRoot } from "./db";
 import { createPosterStore } from "./posters";
 import { localizeExistingPosters } from "./localize-posters";
 import { createHomeHtmlRenderer } from "./home-html";
+import { backfillDoubanCastImages } from "./cast-images";
+import { createDoubanProvider } from "./douban";
 
 const database = createDatabase();
 const posters = createPosterStore();
 const cached = await localizeExistingPosters(database.db, posters);
 if (cached.migrated) console.log(`Saved ${cached.migrated} existing movie posters locally.`);
-const app = createApp({ db: database.db, posters });
+const douban = createDoubanProvider();
+void backfillDoubanCastImages(database.db, posters, douban).then(({ updated }) => {
+  if (updated) console.log(`Saved cast photos for ${updated} existing library entries.`);
+}).catch((error: unknown) => {
+  console.warn("Could not complete cast photo backfill:", error instanceof Error ? error.name : "UnknownError");
+});
+const app = createApp({ db: database.db, posters, douban });
 
 function serveHome(path: string, indexPath: string) {
   const html = readFileSync(indexPath, "utf8");

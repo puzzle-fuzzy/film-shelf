@@ -10,6 +10,7 @@ import { moviePosters, movies } from "./schema";
 import { createPosterGallery } from "./poster-gallery";
 import { createPosterStore, doubanPosterSource, localPosterUrl, LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN, type PosterStore } from "./posters";
 import { actorImageSource, localActorImageUrl } from "./actor-images";
+import { localizeCastImages } from "./cast-images";
 import { createTmdbProvider, type MovieMetadataProvider } from "./tmdb";
 import { createDoubanProvider, tmdbMetadataProvider, type MetadataProvider } from "./metadata";
 import { posterPhotosBodySchema, posterSelectionBodySchema, posterSyncBodySchema, actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
@@ -82,6 +83,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
     if ((input.tmdbId && findExternalMovie("tmdb", mediaType, input.tmdbId)) || (input.doubanId && findExternalMovie("douban", mediaType, input.doubanId))) duplicateMovie();
     const posterUrl = await posters.save(input.posterUrl);
     await posters.ensureVariants(posterUrl);
+    const cast = await localizeCastImages(input.cast || [], posters);
     const timestamp = new Date().toISOString();
     const movie = db.transaction((tx) => {
       const inserted = tx.insert(movies).values({
@@ -96,7 +98,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
         posterUrl,
         releaseDate: input.releaseDate ?? null,
         overview: input.overview || "",
-        cast: input.cast || [],
+        cast,
         magnetUrl: input.magnetUrl ?? null,
         status: "recommended",
         watchedAt: null,

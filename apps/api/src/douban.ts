@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ApiException } from "./errors";
 import { createMetadataCache } from "./metadata-cache";
 import type { MetadataProvider } from "./metadata";
+import { isDoubanActorImageSource } from "./posters";
 
 const idSchema = z.union([z.number().int().positive().safe(), z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(z.number().int().positive().safe())]);
 const imageSchema = z.object({ url: z.string().optional() });
@@ -28,6 +29,11 @@ const subjectSchema = z.object({
   })).nullish(),
 });
 type Subject = z.infer<typeof subjectSchema>;
+const actorSchema = z.object({
+  name: z.string().trim().min(1),
+  avatar: z.object({ large: z.string().nullish(), normal: z.string().nullish() }).nullish(),
+});
+const celebritiesSchema = z.object({ actors: z.array(z.unknown()) });
 const photoSchema = z.object({
   id: idSchema,
   owner_uri: z.string(),
@@ -251,14 +257,30 @@ export function createDoubanProvider(fetcher: typeof fetch = fetch): MetadataPro
         const subject = parsed.data;
         if (subject.type !== mediaType) throw new ApiException(422, "DOUBAN_TYPE_MISMATCH", "豆瓣条目类型与所选作品类型不一致。");
         const result = summary(subject);
+        let profiles: Array<{ name: string; profileUrl: string | null }> = [];
+        if (subject.actors?.length) {
+          try {
+            const credits = celebritiesSchema.parse(await request(`${mediaType}/${id}/celebrities`, undefined, id));
+            profiles = credits.actors.slice(0, 200).flatMap((entry) => {
+              const parsed = actorSchema.safeParse(entry);
+              if (!parsed.success) return [];
+              const { name, avatar } = parsed.data;
+              const profileUrl = [avatar?.large, avatar?.normal].find(isDoubanActorImageSource) ?? null;
+              return [{ name, profileUrl }];
+            });
+          } catch {
+            // Keep subject metadata available when the optional photo source is unavailable.
+          }
+        }
         return {
           mediaType, doubanId: id, tmdbId: null,
           title: result.title, originalTitle: result.originalTitle, posterUrl: result.posterUrl,
           releaseDate: result.releaseDate, overview: result.overview,
           episodeCount: mediaType === "tv" ? subject.episodes_count || null : null,
-          cast: (subject.actors || []).slice(0, 100).map(actor => ({
-            name: actor.name, character: "", profileUrl: null,
-          })),
+          cast: (subject.actors || []).slice(0, 100).map(actor => {
+            const matches = profiles.filter(profile => profile.name === actor.name);
+            return { name: actor.name, character: "", profileUrl: matches.length === 1 ? matches[0]!.profileUrl : null };
+          }),
         };
       });
     },
