@@ -30,3 +30,17 @@ export const movies = sqliteTable("movies", {
   check("movies_status_check", sql`${table.status} in ('recommended', 'watched')`),
   check("movies_watched_at_check", sql`(${table.status} = 'recommended' and ${table.watchedAt} is null) or (${table.status} = 'watched' and ${table.watchedAt} is not null)`),
 ]);
+
+export const moviePosters = sqliteTable("movie_posters", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  movieId: integer("movie_id").notNull().references(() => movies.id, { onDelete: "cascade" }),
+  url: text("url").notNull(),
+  source: text("source", { enum: ["tmdb", "douban"] }),
+  sourceId: text("source_id"),
+  width: integer("width"),
+  height: integer("height"),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("movie_posters_movie_url_unique").on(table.movieId, table.url),
+  uniqueIndex("movie_posters_movie_source_unique").on(table.movieId, table.source, table.sourceId),
+]);

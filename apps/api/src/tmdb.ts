@@ -1,4 +1,4 @@
-import type { ActorSummary, MediaType, MovieInput, SearchMovie } from "@film-shelf/shared";
+import type { ActorSummary, MediaType, MetadataPoster, MovieInput, SearchMovie } from "@film-shelf/shared";
 import { z } from "zod";
 import { ApiException } from "./errors";
 import { createMetadataCache } from "./metadata-cache";
@@ -8,6 +8,7 @@ export interface MovieMetadataProvider {
   search(query: string, mediaType?: MediaType): Promise<SearchMovie[]>;
   details(tmdbId: number, mediaType?: MediaType): Promise<MovieInput>;
   actorFilmography?(personId: number, mediaType?: MediaType): Promise<ActorFilmography>;
+  posters?(tmdbId: number, mediaType?: MediaType): Promise<MetadataPoster[]>;
 }
 
 export interface ActorFilmography {
@@ -68,6 +69,14 @@ const personResponseSchema = z.object({
 const tvPersonResponseSchema = personResponseSchema.omit({ movie_credits: true }).extend({
   tv_credits: z.object({ cast: z.array(tvSummarySchema.extend({ character: z.string().optional().default("") })).default([]) }),
 });
+const posterResponseSchema = z.object({
+  id: z.number().int().positive(),
+  posters: z.array(z.object({
+    file_path: z.string(),
+    width: z.number().int().positive().max(50000),
+    height: z.number().int().positive().max(50000),
+  })),
+});
 
 function imageUrl(path: string | null, size: "w185" | "w500") {
   return path && /^\/[A-Za-z0-9_.-]+$/.test(path) ? `https://image.tmdb.org/t/p/${size}${path}` : null;
@@ -103,6 +112,7 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
   const accessToken = token.trim();
   const cachedDetails = createMetadataCache<MovieInput>();
   const cachedFilmography = createMetadataCache<ActorFilmography>();
+  const cachedPosters = createMetadataCache<MetadataPoster[]>();
   async function request<T>(path: string, params: Record<string, string>, schema: z.ZodType<T>, resource: "movie" | "tv" | "person" = "movie"): Promise<T> {
     if (!accessToken) throw new ApiException(503, "TMDB_NOT_CONFIGURED", "请先在项目 .env 中配置 TMDB_READ_ACCESS_TOKEN，然后重启服务。");
     const url = new URL(`https://api.themoviedb.org/3/${path}`);
@@ -136,6 +146,24 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
 
   return {
     configured: accessToken.length > 0,
+    posters(tmdbId, mediaType = "movie") {
+      if (!Number.isSafeInteger(tmdbId) || tmdbId <= 0) throw new ApiException(400, "INVALID_ID", "资料 ID 必须是正整数。");
+      return cachedPosters(`${mediaType}:${tmdbId}`, async () => {
+        // An empty language filter includes Korean and textless posters as well as translations.
+        const data = await request(`${mediaType}/${tmdbId}/images`, { language: "" }, posterResponseSchema, mediaType);
+        if (data.id !== tmdbId) throw new ApiException(502, "TMDB_INVALID_RESPONSE", "TMDB 返回的海报与所选作品不一致。");
+        const posters = new Map<string, MetadataPoster>();
+        for (const image of data.posters.slice(0, 500)) {
+          if (!/^\/[A-Za-z0-9_-]+\.(?:jpg|png|webp)$/.test(image.file_path)) continue;
+          if (!posters.has(image.file_path)) posters.set(image.file_path, {
+            source: "tmdb", sourceId: image.file_path,
+            url: `https://image.tmdb.org/t/p/original${image.file_path}`, width: image.width, height: image.height,
+          });
+          if (posters.size >= 40) break;
+        }
+        return [...posters.values()];
+      });
+    },
     async search(query, mediaType = "movie") {
       if (mediaType === "tv") {
         const data = await request("search/tv", { query, include_adult: "false", page: "1" }, tvSearchResponseSchema, "tv");

@@ -2,6 +2,28 @@ export type MovieStatus = "recommended" | "watched";
 export type MediaType = "movie" | "tv";
 export type MetadataSource = "tmdb" | "douban";
 
+export interface MetadataPoster {
+  source: MetadataSource;
+  sourceId: string;
+  url: string;
+  width: number | null;
+  height: number | null;
+}
+
+export interface MoviePoster {
+  id: number;
+  url: string;
+  width: number | null;
+  height: number | null;
+  source: MetadataSource | null;
+  posterVariants?: PosterVariant[];
+}
+
+export interface MoviePosterList {
+  posters: MoviePoster[];
+  primaryPosterId: number | null;
+}
+
 export interface MetadataSearchResult {
   provider: MetadataSource;
   mediaType: MediaType;

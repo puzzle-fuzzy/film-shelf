@@ -1,7 +1,11 @@
-import type { ActorMovieList, ApiError, CatalogMovieDetails, MediaType, Movie, MovieGridList, MovieStatus } from "@film-shelf/shared";
+import type { ActorMovieList, ApiError, CatalogMovieDetails, MediaType, Movie, MovieGridList, MovieStatus, MoviePosterList } from "@film-shelf/shared";
 
 export class ApiRequestError extends Error {
   constructor(public readonly status: number, message: string) { super(message); this.name = "ApiRequestError"; }
+}
+
+export function getMoviePosters(id: number, signal: AbortSignal): Promise<MoviePosterList> {
+  return getJson<MoviePosterList>(`/api/movies/${id}/posters`, signal, "海报图集暂时无法载入，请重试。");
 }
 
 export async function getMovies(status: MovieStatus, page: number, pageSize: number, signal: AbortSignal, mediaType?: MediaType): Promise<MovieGridList> {

@@ -6,7 +6,7 @@ import { DetailPoster } from "../components/DetailPoster";
 import { nextNavigationState } from "../lib/navigation";
 import "../detail.css";
 
-export function MovieDetailView({ movie, backTo, backState, backLabel = "返回片单" }: { movie: MovieDetailData; backTo: string; backState?: unknown; backLabel?: string }) {
+export function MovieDetailView({ movie, libraryMovieId, backTo, backState, backLabel = "返回片单" }: { movie: MovieDetailData; libraryMovieId?: number | null; backTo: string; backState?: unknown; backLabel?: string }) {
   const location = useLocation();
   const magnet = movie.magnetUrl && /^magnet:\?/i.test(movie.magnetUrl) ? movie.magnetUrl : null;
   const watchedDate = formatWatchedDate(movie.watchedAt);
@@ -19,7 +19,7 @@ export function MovieDetailView({ movie, backTo, backState, backLabel = "返回�
       </Link>
       <div className="detail-layout">
         <aside className="detail-poster-column" aria-label="影视海报">
-          <DetailPoster key={movie.posterUrl} src={movie.posterUrl} title={movie.title} />
+          <DetailPoster key={`${libraryMovieId}-${movie.posterUrl}`} src={movie.posterUrl} title={movie.title} movieId={libraryMovieId} />
         </aside>
         <div className="detail-content">
           <header className="detail-introduction">

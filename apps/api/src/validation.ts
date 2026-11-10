@@ -82,3 +82,9 @@ export const actorMoviesQuerySchema = z.object({
   page: queryInteger(1000000, "1"),
   pageSize: queryInteger(100, "24"),
 });
+
+// Match the original string: URL parsing and trimming can disguise invalid input.
+export const doubanPhotoUrlSchema = z.string().max(150).regex(/^https:\/\/movie\.douban\.com\/photos\/photo\/([1-9]\d*)\/(?![\s\S])/, "请输入豆瓣图片详情页地址").refine((value) => Number.isSafeInteger(Number(value.split("/").at(-2))), "图片编号无效");
+export const posterPhotosBodySchema = z.object({ photoUrls: z.array(doubanPhotoUrlSchema).min(1).max(40) }).strict();
+export const posterSelectionBodySchema = z.object({ posterId: positiveInteger }).strict();
+export const posterSyncBodySchema = z.object({}).strict();

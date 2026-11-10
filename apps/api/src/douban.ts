@@ -1,4 +1,4 @@
-import type { MediaType, MetadataSearchResult, MovieInput } from "@film-shelf/shared";
+import type { MediaType, MetadataPoster, MetadataSearchResult, MovieInput } from "@film-shelf/shared";
 import { z } from "zod";
 import { ApiException } from "./errors";
 import { createMetadataCache } from "./metadata-cache";
@@ -28,6 +28,14 @@ const subjectSchema = z.object({
   })).nullish(),
 });
 type Subject = z.infer<typeof subjectSchema>;
+const photoSchema = z.object({
+  id: idSchema,
+  owner_uri: z.string(),
+  photo_type: z.string(),
+  image: z.object({ large: z.object({
+    url: z.string(), width: z.number().int().positive().max(50000).nullish(), height: z.number().int().positive().max(50000).nullish(),
+  }) }),
+});
 
 function invalidResponse(): never {
   throw new ApiException(502, "DOUBAN_INVALID_RESPONSE", "豆瓣返回的资料格式异常或需要验证，请稍后重试。");
@@ -73,9 +81,11 @@ function summary(subject: Subject): MetadataSearchResult {
 export function createDoubanProvider(fetcher: typeof fetch = fetch): MetadataProvider {
   const cachedDetails = createMetadataCache<MovieInput>();
   const cachedSearch = createMetadataCache<MetadataSearchResult[]>();
+  const cachedPoster = createMetadataCache<MetadataPoster>();
+  const cachedPosters = createMetadataCache<MetadataPoster[]>();
   let activeRequests = 0;
 
-  async function request(path: string, params?: Record<string, string>): Promise<unknown> {
+  async function request(path: string, params?: Record<string, string>, subjectId?: number): Promise<unknown> {
     if (activeRequests >= 4) throw new ApiException(429, "DOUBAN_BUSY", "豆瓣资料请求繁忙，请稍后重试。");
     activeRequests++;
     try {
@@ -83,7 +93,7 @@ export function createDoubanProvider(fetcher: typeof fetch = fetch): MetadataPro
       if (params) url.search = new URLSearchParams(params).toString();
       const referer = path === "search/movie"
         ? `https://m.douban.com/search/?${new URLSearchParams({ query: params?.q || "", type: "movie" })}`
-        : `https://m.douban.com/movie/subject/${path.split("/")[1]}/`;
+        : `https://m.douban.com/movie/subject/${subjectId ?? path.split("/")[1]}/`;
       let response: Response;
       try {
         response = await fetcher(url, {
@@ -114,8 +124,99 @@ export function createDoubanProvider(fetcher: typeof fetch = fetch): MetadataPro
     }
   }
 
+  function checkId(id: number) {
+    if (!Number.isSafeInteger(id) || id <= 0) throw new ApiException(400, "INVALID_ID", "资料 ID 必须是正整数。");
+  }
+
+  function verificationRequired(): never {
+    throw new ApiException(502, "DOUBAN_VERIFICATION_REQUIRED", "豆瓣海报相册需要验证，可打开豆瓣相册后粘贴海报图片页链接。");
+  }
+
+  async function poster(id: number, mediaType: MediaType, photoId: number): Promise<MetadataPoster> {
+    checkId(id);
+    checkId(photoId);
+    return cachedPoster(`${mediaType}:${id}:${photoId}`, async () => {
+      const parsed = photoSchema.safeParse(await request(`photo/${photoId}`, undefined, id));
+      if (!parsed.success) invalidResponse();
+      const photo = parsed.data;
+      if (photo.id !== photoId || photo.owner_uri !== `douban://douban.com/${mediaType}/${id}`) {
+        throw new ApiException(422, "DOUBAN_POSTER_MISMATCH", "这张豆瓣图片不属于当前作品。");
+      }
+      if (photo.photo_type !== "poster") throw new ApiException(422, "DOUBAN_NOT_POSTER", "这张豆瓣图片不是海报，请选择海报相册中的图片。");
+      const url = photo.image.large.url;
+      const match = /^https:\/\/img[1239]\.doubanio\.com\/view\/photo\/(?:l|large|raw)\/public\/p([1-9][0-9]{0,19})\.(?:jpg|png|webp)$/.exec(url);
+      if (!match || match[1] !== String(photoId)) invalidResponse();
+      return { source: "douban", sourceId: String(photoId), url, width: photo.image.large.width ?? null, height: photo.image.large.height ?? null };
+    });
+  }
+
+  async function posterIds(id: number): Promise<number[]> {
+    if (activeRequests >= 4) throw new ApiException(429, "DOUBAN_BUSY", "豆瓣资料请求繁忙，请稍后重试。");
+    activeRequests++;
+    try {
+      let response: Response;
+      try {
+        response = await fetcher(`https://movie.douban.com/subject/${id}/photos?type=R`, {
+          headers: { Accept: "text/html", "User-Agent": "Mozilla/5.0 FilmShelf/1.0", Referer: `https://movie.douban.com/subject/${id}/` },
+          credentials: "omit", redirect: "manual", signal: AbortSignal.timeout(10000),
+        });
+      } catch (error) {
+        if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) throw new ApiException(504, "DOUBAN_TIMEOUT", "豆瓣请求超时，请稍后重试。");
+        throw new ApiException(502, "DOUBAN_UNAVAILABLE", "暂时无法连接豆瓣，请稍后重试。");
+      }
+      if ((response.status >= 300 && response.status < 400) || [401, 403, 418].includes(response.status) || response.redirected) verificationRequired();
+      if (response.status === 429) throw new ApiException(429, "DOUBAN_RATE_LIMITED", "豆瓣请求过于频繁，请稍后重试。");
+      if (!response.ok) throw new ApiException(502, "DOUBAN_UNAVAILABLE", "豆瓣暂时无法提供海报相册，请稍后重试。");
+      if (!/^text\/html(?:\s*;|$)/i.test(response.headers.get("Content-Type") || "")) verificationRequired();
+      const maximum = 1_048_576;
+      if (Number(response.headers.get("Content-Length")) > maximum) verificationRequired();
+      const reader = response.body?.getReader();
+      if (!reader) verificationRequired();
+      const decoder = new TextDecoder();
+      let size = 0;
+      let html = "";
+      try {
+        while (true) {
+          const chunk = await reader.read();
+          if (chunk.done) break;
+          size += chunk.value.byteLength;
+          if (size > maximum) { await reader.cancel(); verificationRequired(); }
+          html += decoder.decode(chunk.value, { stream: true });
+        }
+        html += decoder.decode();
+      } catch (error) {
+        if (error instanceof ApiException) throw error;
+        if (error instanceof Error && ["TimeoutError", "AbortError"].includes(error.name)) throw new ApiException(504, "DOUBAN_TIMEOUT", "豆瓣请求超时，请稍后重试。");
+        throw new ApiException(502, "DOUBAN_UNAVAILABLE", "读取豆瓣海报相册失败，请稍后重试。");
+      } finally { reader.releaseLock(); }
+      if (!/<h1\b[^>]*>[\s\S]*?海报[\s\S]*?<\/h1>/i.test(html)
+        || !new RegExp(`href=["'](?:https://movie\\.douban\\.com)?/subject/${id}/["']`, "i").test(html)) verificationRequired();
+      const list = /<ul\b[^>]*class=["'][^"']*\bposter-col3\b[^"']*["'][^>]*>([\s\S]*?)<\/ul>/i.exec(html);
+      if (!list) verificationRequired();
+      const ids = new Set<number>();
+      for (const match of list[1]!.matchAll(/<li\b[^>]*\bdata-id=["']([1-9][0-9]{0,15})["']/g)) {
+        const photoId = Number(match[1]);
+        if (Number.isSafeInteger(photoId)) ids.add(photoId);
+        if (ids.size >= 40) break;
+      }
+      return [...ids];
+    } finally { activeRequests--; }
+  }
+
   return {
     configured: true,
+    poster,
+    async posters(id, mediaType) {
+      checkId(id);
+      return cachedPosters(`${mediaType}:${id}`, async () => {
+        const ids = await posterIds(id);
+        const results: MetadataPoster[] = [];
+        for (let start = 0; start < ids.length; start += 4) {
+          results.push(...await Promise.all(ids.slice(start, start + 4).map(photoId => poster(id, mediaType, photoId))));
+        }
+        return results;
+      });
+    },
     async search(query: string, mediaType: MediaType) {
       const term = query.trim();
       if (!term || term.length > 200) throw new ApiException(400, "INVALID_QUERY", "请输入 1 至 200 个字符的搜索词。");

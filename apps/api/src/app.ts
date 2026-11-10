@@ -6,12 +6,13 @@ import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { newestMovieOrder, normalizeSearchText, type MovieDatabase } from "./db";
 import { ApiException } from "./errors";
-import { movies } from "./schema";
+import { moviePosters, movies } from "./schema";
+import { createPosterGallery } from "./poster-gallery";
 import { createPosterStore, doubanPosterSource, localPosterUrl, LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN, type PosterStore } from "./posters";
 import { actorImageSource, localActorImageUrl } from "./actor-images";
 import { createTmdbProvider, type MovieMetadataProvider } from "./tmdb";
 import { createDoubanProvider, tmdbMetadataProvider, type MetadataProvider } from "./metadata";
-import { actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
+import { posterPhotosBodySchema, posterSelectionBodySchema, posterSyncBodySchema, actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
 
 const { titleSearch: _titleSearch, originalTitleSearch: _originalTitleSearch, watchedOrder: _watchedOrder, ...movieColumns } = getTableColumns(movies);
 const gridMovieColumns = { id: movies.id, title: movies.title, releaseDate: movies.releaseDate, posterUrl: movies.posterUrl, mediaType: movies.mediaType };
@@ -31,6 +32,7 @@ export interface AppDependencies {
 export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban = createDoubanProvider(), posters = createPosterStore() }: AppDependencies) {
   const provider = tmdbToken === undefined ? tmdb : createTmdbProvider(tmdbToken);
   const providers: Record<MetadataSource, MetadataProvider> = { tmdb: tmdbMetadataProvider(provider), douban };
+  const gallery = createPosterGallery(db, posters, providers);
   const app = new Hono();
   app.use("/api/*", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: { code: "BODY_TOO_LARGE", message: "请求内容过大。" } }, 413) }));
   app.use("/api/*", async (c, next) => {
@@ -81,26 +83,30 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
     const posterUrl = await posters.save(input.posterUrl);
     await posters.ensureVariants(posterUrl);
     const timestamp = new Date().toISOString();
-    const movie = db.insert(movies).values({
-      tmdbId: input.tmdbId ?? null,
-      mediaType,
-      doubanId: input.doubanId ?? null,
-      episodeCount: mediaType === "tv" ? input.episodeCount ?? null : null,
-      title: input.title,
-      originalTitle: input.originalTitle || "",
-      titleSearch: normalizeSearchText(input.title),
-      originalTitleSearch: normalizeSearchText(input.originalTitle || ""),
-      posterUrl,
-      releaseDate: input.releaseDate ?? null,
-      overview: input.overview || "",
-      cast: input.cast || [],
-      magnetUrl: input.magnetUrl ?? null,
-      status: "recommended",
-      watchedAt: null,
-      createdAt: timestamp,
-      updatedAt: timestamp,
-    }).onConflictDoNothing().returning(movieColumns).get();
-    if (!movie) duplicateMovie();
+    const movie = db.transaction((tx) => {
+      const inserted = tx.insert(movies).values({
+        tmdbId: input.tmdbId ?? null,
+        mediaType,
+        doubanId: input.doubanId ?? null,
+        episodeCount: mediaType === "tv" ? input.episodeCount ?? null : null,
+        title: input.title,
+        originalTitle: input.originalTitle || "",
+        titleSearch: normalizeSearchText(input.title),
+        originalTitleSearch: normalizeSearchText(input.originalTitle || ""),
+        posterUrl,
+        releaseDate: input.releaseDate ?? null,
+        overview: input.overview || "",
+        cast: input.cast || [],
+        magnetUrl: input.magnetUrl ?? null,
+        status: "recommended",
+        watchedAt: null,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }).onConflictDoNothing().returning(movieColumns).get();
+      if (!inserted) duplicateMovie();
+      if (posterUrl) tx.insert(moviePosters).values({ movieId: inserted.id, url: posterUrl, createdAt: timestamp }).run();
+      return inserted;
+    });
     return serializeMovie(movie);
   }
 
@@ -244,6 +250,24 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
       movies: db.select(movieColumns).from(movies).where(filter).orderBy(...order).limit(pageSize).offset(offset).all().map(serializeMovie),
     };
     return c.json(result);
+  });
+
+  app.get("/api/movies/:id/posters", async (c) => c.json(await gallery.list(findMovie(idSchema.parse(c.req.param("id"))))));
+  app.post("/api/movies/:id/posters/sync", async (c) => {
+    const movie = findMovie(idSchema.parse(c.req.param("id")));
+    posterSyncBodySchema.parse(await c.req.json());
+    return c.json(await gallery.append(movie));
+  });
+  app.post("/api/movies/:id/posters", async (c) => {
+    const movie = findMovie(idSchema.parse(c.req.param("id")));
+    const { photoUrls } = posterPhotosBodySchema.parse(await c.req.json());
+    return c.json(await gallery.append(movie, photoUrls.map((url) => url.split("/").at(-2)!)));
+  });
+  app.patch("/api/movies/:id/poster", async (c) => {
+    const movie = findMovie(idSchema.parse(c.req.param("id")));
+    const { posterId } = posterSelectionBodySchema.parse(await c.req.json());
+    gallery.select(movie, posterId);
+    return c.json({ movie: findMovie(movie.id) });
   });
 
   app.get("/api/movies/:id", (c) => c.json({ movie: findMovie(idSchema.parse(c.req.param("id"))) }));

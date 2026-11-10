@@ -48,5 +48,5 @@ function MoviePage({ id, catalog, mediaType }: { id: string; catalog: boolean; m
   if (notFound) return <section className="empty-state"><FilmIcon /><h1>没有找到这部作品</h1><p>影视资料可能不存在，请返回继续浏览。</p><Link className="outline-button" to={back.to} state={back.state}>{back.label}</Link></section>;
   if (error) return <section className="empty-state" role="alert"><FilmIcon /><h1>影视详情暂时无法载入</h1><p>{error}</p><button type="button" className="outline-button" onClick={() => setRevision((value) => value + 1)}>重新加载</button><Link className="outline-button" to={back.to} state={back.state}>{back.label}</Link></section>;
   if (loading || !movie) return <MovieLoading />;
-  return <MovieDetailView movie={movie} backTo={back.to} backState={back.state} backLabel={back.label} />;
+  return <MovieDetailView movie={movie} libraryMovieId={"libraryMovieId" in movie ? movie.libraryMovieId : movie.id} backTo={back.to} backState={back.state} backLabel={back.label} />;
 }

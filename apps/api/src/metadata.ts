@@ -1,10 +1,12 @@
-import type { MediaType, MetadataSearchResult, MovieInput } from "@film-shelf/shared";
+import type { MediaType, MetadataPoster, MetadataSearchResult, MovieInput } from "@film-shelf/shared";
 import type { MovieMetadataProvider } from "./tmdb";
 
 export interface MetadataProvider {
   readonly configured: boolean;
   search(query: string, mediaType: MediaType): Promise<MetadataSearchResult[]>;
   details(id: number, mediaType: MediaType): Promise<MovieInput>;
+  posters?(id: number, mediaType: MediaType): Promise<MetadataPoster[]>;
+  poster?(id: number, mediaType: MediaType, photoId: number): Promise<MetadataPoster>;
 }
 
 export { createDoubanProvider } from "./douban";
@@ -19,5 +21,6 @@ export function tmdbMetadataProvider(provider: MovieMetadataProvider): MetadataP
       const result = await provider.details(id, mediaType);
       return { ...result, ...(result.mediaType === undefined && mediaType === "movie" ? { mediaType: "movie" as const } : {}) };
     },
+    ...(provider.posters ? { posters: (id: number, mediaType: MediaType) => provider.posters!(id, mediaType) } : {}),
   };
 }

@@ -9,8 +9,9 @@ import { Label } from "@/components/ui/label";
 import { MoviePoster } from "@/components/movie-poster";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { api, errorMessage } from "@/lib/api";
+import { MoviePosterManager } from "@/components/movie-poster-manager";
 
-export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | null; onClose: () => void; onSaved: (movie: Movie) => void }) {
+export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | null; onClose: () => void; onSaved: (movie: Movie, field: "poster" | "magnet") => void }) {
   const isMobile = useIsMobile();
   return (
     <Drawer open={movie !== null} onOpenChange={(open) => { if (!open) onClose(); }} direction={isMobile ? "bottom" : "right"}>
@@ -33,7 +34,9 @@ export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | 
               </div>
             </div>
             <Separator />
-            <MovieMagnetEditor key={movie.id} movie={movie} onSaved={onSaved} />
+            <MoviePosterManager key={movie.id} movie={movie} onSaved={(saved) => onSaved(saved, "poster")} />
+            <Separator />
+            <MovieMagnetEditor key={movie.id} movie={movie} onSaved={(saved) => onSaved(saved, "magnet")} />
             <Separator />
             <section className="grid gap-2"><h3 className="font-medium">{movie.mediaType === "tv" ? "剧集简介" : "电影简介"}</h3><p className="leading-6 whitespace-pre-wrap text-muted-foreground">{movie.overview || "暂无简介。"}</p></section>
             <Separator />
