@@ -9,7 +9,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { drizzle } from "drizzle-orm/bun-sqlite";
 import { migrate } from "drizzle-orm/bun-sqlite/migrator";
 import { createDatabase, migrationsFolder } from "../src/db";
@@ -85,7 +85,7 @@ test("gallery migration preserves every movie field and backfills one primary ro
     ).toEqual(gallery);
   } finally {
     database.close();
-    if (!resolve(directory).startsWith(resolve(tmpdir()) + "\\"))
+    if (dirname(resolve(directory)) !== resolve(tmpdir()))
       throw new Error("Invalid temporary directory");
     rmSync(directory, { recursive: true, force: true });
   }
