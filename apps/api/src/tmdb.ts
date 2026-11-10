@@ -109,7 +109,8 @@ function toSearchTv(show: z.infer<typeof tvSummarySchema>): SearchMovie {
   };
 }
 
-export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN || "", fetcher: typeof fetch = fetch): MovieMetadataProvider {
+export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN || "", fetcher: typeof fetch = fetch, apiHost = process.env.TMDB_API_HOST || "api.themoviedb.org"): MovieMetadataProvider {
+  if (apiHost !== "api.themoviedb.org" && apiHost !== "api.tmdb.org") throw new Error("TMDB_API_HOST must be api.themoviedb.org or api.tmdb.org.");
   const accessToken = token.trim();
   const cachedDetails = createMetadataCache<MovieInput>();
   const cachedFilmography = createMetadataCache<ActorFilmography>();
@@ -117,7 +118,7 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
   const cachedIdentities = createMetadataCache<number | null>();
   async function request<T>(path: string, params: Record<string, string>, schema: z.ZodType<T>, resource: "movie" | "tv" | "person" = "movie"): Promise<T> {
     if (!accessToken) throw new ApiException(503, "TMDB_NOT_CONFIGURED", "请先在项目 .env 中配置 TMDB_READ_ACCESS_TOKEN，然后重启服务。");
-    const url = new URL(`https://api.themoviedb.org/3/${path}`);
+    const url = new URL(`https://${apiHost}/3/${path}`);
     url.search = new URLSearchParams({ language: "zh-CN", ...params }).toString();
     let response: Response;
     try {

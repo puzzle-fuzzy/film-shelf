@@ -33,6 +33,8 @@ PORT=3101
 
 Token 只在服务端读取，不要添加 `VITE_` 前缀或提交到 Git。未配置时可使用豆瓣搜索和导入，也可浏览本地数据和切换状态；TMDB 搜索及远程演员作品查询会提示配置缺失。修改 Token 后重启开发服务。豆瓣公开查询不需要登录或 Cookie，也不需要安装 douban-cli；站点限流、安全验证或接口变化时会提示错误，不会自动尝试绕过验证。
 
+服务器若无法正确解析默认 TMDB 域名，可配置 `TMDB_API_HOST=api.tmdb.org`。仅允许 `api.themoviedb.org`（默认）和 `api.tmdb.org` 两个 API 域名，继续使用 HTTPS 证书校验和同一服务端 Token。
+
 ```sh
 bun run dev
 ```

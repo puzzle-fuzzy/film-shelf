@@ -31,3 +31,17 @@ test("never guesses ambiguous identities or sends invalid IMDb identifiers upstr
   }
   expect(calls).toBe(2);
 });
+
+test("can use the alternate TMDB API host while keeping credentials on a fixed trusted origin", async () => {
+  const provider = createTmdbProvider("private-token", (async (input: Parameters<typeof fetch>[0], init?: Parameters<typeof fetch>[1]) => {
+    const url = new URL(String(input));
+    expect(url.origin).toBe("https://api.tmdb.org");
+    expect(url.pathname).toBe("/3/find/nm12345");
+    expect(new Headers(init?.headers).get("Authorization")).toBe("Bearer private-token");
+    return Response.json({ person_results: [{ id: 42 }] });
+  }) as unknown as typeof fetch, "api.tmdb.org");
+  expect(await provider.findByImdb!("nm12345", "person")).toBe(42);
+  for (const host of ["api.tmdb.org.evil.test", "https://api.tmdb.org", "api.tmdb.org/path", "127.0.0.1"]) {
+    expect(() => createTmdbProvider("private-token", fetch, host)).toThrow("TMDB_API_HOST");
+  }
+});
