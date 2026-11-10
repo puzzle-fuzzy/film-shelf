@@ -3,14 +3,11 @@
 .actor-identity h1 { overflow-wrap: anywhere; }
 .actor-identity .detail-actor-photo, .actor-photo-skeleton { width: 72px; height: 96px; border-radius: 7px; flex-shrink: 0; }
 .actor-photo-skeleton { display: block; background: var(--skeleton-background); animation: pulse 1.4s ease-in-out infinite; }
-.actor-library-status { display: inline-flex; align-self: flex-start; margin-top: 10px; padding: 3px 7px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-muted); background: var(--badge-background); font-size: 10px; line-height: 1.5; }
-.actor-library-status.watched { color: var(--text-strong); background: var(--skeleton-background); border-color: var(--border-badge); }
 .actor-card-role { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; margin-top: 8px; color: var(--text-subtle); font-size: 11px; line-height: 1.75; overflow-wrap: anywhere; }
 @media (max-width: 599px) {
   .actor-identity { gap: 15px; }
   .actor-identity .detail-actor-photo, .actor-photo-skeleton { width: 54px; height: 72px; }
   .actor-identity h1 { font-size: 23px; }
   .actor-page-heading { gap: 15px; }
-  .actor-library-status { font-size: 9px; margin-top: 8px; }
   .actor-card-role { font-size: 10px; }
 }

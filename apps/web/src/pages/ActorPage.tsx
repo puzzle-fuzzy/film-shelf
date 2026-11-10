@@ -94,7 +94,6 @@ function ActorPage({ id }: { id: string }) {
         <Poster src={movie.posterUrl} title={movie.title} variants={movie.posterVariants} priority={index === 0} decorative />
         <span className="card-title">{movie.title}</span>
         <span className="card-year"><span className="media-badge">{mediaType === "tv" ? "电视剧" : "电影"}</span> {movie.releaseDate?.slice(0, 4) || (mediaType === "tv" ? "首播日期未知" : "上映日期未知")}</span>
-        {movie.libraryStatus === "watched" && <span className="actor-library-status watched">已观影</span>}
         {movie.character && <span className="actor-card-role">饰 {movie.character}</span>}
       </Link>; })}</div> : <div className="empty-state"><FilmIcon /><h2>暂无参演作品</h2><p>暂时没有这位演员的参演作品资料。</p></div>}
     </div>
