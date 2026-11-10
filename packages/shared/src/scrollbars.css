@@ -1,0 +1,35 @@
+@import "overlayscrollbars/overlayscrollbars.css";
+
+.os-scrollbar.os-theme-film-shelf {
+  --os-size: 11px;
+  --os-padding-perpendicular: 2px;
+  --os-padding-axis: 3px;
+  --os-handle-border-radius: 999px;
+  --os-handle-interactive-area-offset: 3px;
+  --os-handle-bg: #71717a80;
+  --os-handle-bg-hover: #52525ba8;
+  --os-handle-bg-active: #52525bd9;
+}
+
+.dark .os-scrollbar.os-theme-film-shelf {
+  --os-handle-bg: #a1a1aa80;
+  --os-handle-bg-hover: #d4d4d8a8;
+  --os-handle-bg-active: #d4d4d8d9;
+}
+
+body > .os-scrollbar.os-theme-film-shelf { z-index: 30; }
+body[data-scroll-locked] > .os-scrollbar.os-theme-film-shelf { display: none; }
+
+@media (forced-colors: active) {
+  .os-scrollbar.os-theme-film-shelf {
+    --os-handle-bg: CanvasText;
+    --os-handle-bg-hover: Highlight;
+    --os-handle-bg-active: Highlight;
+    forced-color-adjust: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .os-scrollbar.os-theme-film-shelf,
+  .os-scrollbar.os-theme-film-shelf * { transition: none; }
+}

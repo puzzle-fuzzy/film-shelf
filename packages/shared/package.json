@@ -1,0 +1,17 @@
+{
+  "name": "@film-shelf/shared",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./home-grid": "./src/home-grid.ts",
+    "./scrollbars": "./src/scrollbars.ts",
+    "./scrollbars.css": "./src/scrollbars.css"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "overlayscrollbars": "^2.17.0"
+  }
+}

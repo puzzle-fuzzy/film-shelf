@@ -1,0 +1,21 @@
+{
+  "name": "@film-shelf/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --env-file=../../.env --watch src/index.ts",
+    "start": "bun --env-file=../../.env src/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "db:generate": "bunx drizzle-kit generate",
+    "db:migrate": "bun --env-file=../../.env src/migrate.ts"
+  },
+  "dependencies": {
+    "@film-shelf/shared": "workspace:*",
+    "hono": "^4.13.16",
+    "drizzle-orm": "^0.45.4",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.31.11"
+  }
+}

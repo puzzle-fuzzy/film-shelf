@@ -1,0 +1,23 @@
+{
+  "name": "film-shelf",
+  "private": true,
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "bun run --parallel --filter '@film-shelf/api' --filter '@film-shelf/admin' --filter '@film-shelf/web' dev",
+    "build": "bun run --parallel --filter '@film-shelf/admin' --filter '@film-shelf/web' build",
+    "start": "bun run --filter '@film-shelf/api' start",
+    "typecheck": "bun run --workspaces --if-present typecheck",
+    "test": "bun test apps/api",
+    "db:generate": "bun run --filter '@film-shelf/api' db:generate",
+    "db:migrate": "bun run --filter '@film-shelf/api' db:migrate"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "@types/bun": "^1.4.4"
+  }
+}

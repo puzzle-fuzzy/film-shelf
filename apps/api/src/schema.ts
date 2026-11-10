@@ -1,0 +1,27 @@
+import type { CastMember } from "@film-shelf/shared";
+import { sql } from "drizzle-orm";
+import { check, index, integer, sqliteTable, text } from "drizzle-orm/sqlite-core";
+
+export const movies = sqliteTable("movies", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  tmdbId: integer("tmdb_id").unique(),
+  title: text("title").notNull(),
+  originalTitle: text("original_title").notNull().default(""),
+  titleSearch: text("title_search").notNull().default(""),
+  originalTitleSearch: text("original_title_search").notNull().default(""),
+  posterUrl: text("poster_url"),
+  releaseDate: text("release_date"),
+  overview: text("overview").notNull().default(""),
+  cast: text("cast", { mode: "json" }).$type<CastMember[]>().notNull().default(sql`'[]'`),
+  magnetUrl: text("magnet_url"),
+  status: text("status", { enum: ["recommended", "watched"] }).notNull().default("recommended"),
+  watchedAt: text("watched_at"),
+  watchedOrder: integer("watched_order"),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+}, (table) => [
+  index("movies_status_created_idx").on(table.status, table.createdAt),
+  index("movies_status_watched_order_idx").on(table.status, table.watchedOrder),
+  check("movies_status_check", sql`${table.status} in ('recommended', 'watched')`),
+  check("movies_watched_at_check", sql`(${table.status} = 'recommended' and ${table.watchedAt} is null) or (${table.status} = 'watched' and ${table.watchedAt} is not null)`),
+]);
