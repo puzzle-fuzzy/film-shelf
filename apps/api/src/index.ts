@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { serveStatic } from "hono/bun";
 import { createApp } from "./app";
+import { createServerFetch } from "./http-server";
 import { createDatabase, projectRoot } from "./db";
 import { createPosterStore } from "./posters";
 import { localizeExistingPosters } from "./localize-posters";
@@ -55,4 +56,4 @@ if (existsSync(resolve(adminDist, "index.html"))) {
 const port = Number(process.env.PORT || 3101);
 if (!Number.isSafeInteger(port) || port < 1 || port > 65535) throw new Error("PORT must be a valid port number.");
 
-export default { hostname: "127.0.0.1", port, fetch: app.fetch };
+export default { hostname: "127.0.0.1", port, fetch: createServerFetch(app.fetch) };

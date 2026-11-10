@@ -32,6 +32,7 @@ Initial production validation will import real posters for the existing Douban T
 - `POST /api/movies/:id/posters` accepts 1–40 strict Douban photo-detail URLs; validates ownership/category before saving.
 - `PATCH /api/movies/:id/poster` accepts an integer poster ID belonging to that work and returns the updated movie.
 - Downloads use the existing trusted-host image store, real MIME validation and local immutable cache; generate current WebP variants when available. Maximum three concurrent downloads; deduplicate synchronization per work. Do not hold a database transaction over network waits.
+- The two batch poster POST requests receive a 120-second Bun idle deadline; ordinary routes keep their existing timeout. Verify this with a delayed real HTTP response, including an ordinary-route control.
 - Partial download failures retain saved successes and existing primary cover; invalid source/ownership is never reported as successful. Selecting a cover is atomic and never alters recommendation/watch metadata or magnet links.
 
 ## Validation and delivery
