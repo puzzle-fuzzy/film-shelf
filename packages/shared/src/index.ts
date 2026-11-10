@@ -1,4 +1,19 @@
 export type MovieStatus = "recommended" | "watched";
+export type MediaType = "movie" | "tv";
+export type MetadataSource = "tmdb" | "douban";
+
+export interface MetadataSearchResult {
+  provider: MetadataSource;
+  mediaType: MediaType;
+  externalId: number;
+  title: string;
+  originalTitle: string;
+  posterUrl: string | null;
+  releaseDate: string | null;
+  overview: string;
+  year?: string;
+  countries?: string[];
+}
 
 export interface CastMember {
   tmdbPersonId?: number | null;
@@ -8,6 +23,9 @@ export interface CastMember {
 }
 
 export interface MovieInput {
+  mediaType?: MediaType;
+  doubanId?: number | null;
+  episodeCount?: number | null;
   tmdbId?: number | null;
   title: string;
   originalTitle?: string;
@@ -20,6 +38,9 @@ export interface MovieInput {
 
 export interface Movie {
   id: number;
+  mediaType: MediaType;
+  doubanId: number | null;
+  episodeCount: number | null;
   tmdbId: number | null;
   title: string;
   originalTitle: string;
@@ -35,6 +56,9 @@ export interface Movie {
 }
 
 export interface SearchMovie {
+  mediaType?: MediaType;
+  year?: string;
+  countries?: string[];
   tmdbId: number;
   title: string;
   originalTitle: string;
@@ -43,7 +67,7 @@ export interface SearchMovie {
   overview: string;
 }
 
-export type MovieDetailData = Pick<Movie, "title" | "originalTitle" | "posterUrl" | "releaseDate" | "overview" | "cast" | "watchedAt" | "magnetUrl">;
+export type MovieDetailData = Pick<Movie, "title" | "originalTitle" | "posterUrl" | "releaseDate" | "overview" | "cast" | "watchedAt" | "magnetUrl" | "mediaType" | "episodeCount" | "tmdbId" | "doubanId">;
 
 export interface CatalogMovieDetails extends MovieDetailData {
   tmdbId: number;
@@ -85,7 +109,7 @@ export interface PosterVariant {
   width: number;
 }
 
-export type MovieGridItem = Pick<Movie, "id" | "title" | "posterUrl" | "releaseDate"> & {
+export type MovieGridItem = Pick<Movie, "id" | "title" | "posterUrl" | "releaseDate" | "mediaType"> & {
   posterVariants?: PosterVariant[];
 };
 

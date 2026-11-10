@@ -1,4 +1,5 @@
 import { isPageNumber } from "@film-shelf/shared/home-grid";
+import type { MediaType } from "@film-shelf/shared";
 
 export { pageFromSearch } from "@film-shelf/shared/home-grid";
 
@@ -14,7 +15,21 @@ interface NavigationLocation {
   state: unknown;
 }
 
-const movieDetailPath = /^\/(?:catalog\/)?movies\//;
+const movieDetailPath = /^\/(?:movies\/|catalog\/(?:movies|tv)\/)/;
+
+export function mediaTypeFromSearch(search: URLSearchParams): MediaType | undefined {
+  const value = search.get("mediaType");
+  return value === "movie" || value === "tv" ? value : undefined;
+}
+
+export function homeLocation(recommendedPage: number, watchedPage: number, hash = "", mediaType?: MediaType) {
+  const query = new URLSearchParams();
+  if (mediaType) query.set("mediaType", mediaType);
+  if (recommendedPage > 1) query.set("recommendedPage", String(recommendedPage));
+  if (watchedPage > 1) query.set("watchedPage", String(watchedPage));
+  const search = query.toString();
+  return { pathname: "/", search: search ? `?${search}` : "", hash };
+}
 
 export function isPositiveId(value: string): boolean {
   return /^[1-9]\d*$/.test(value) && Number.isSafeInteger(Number(value));
@@ -27,16 +42,25 @@ export function safeInternalPath(value: unknown): string | null {
     const pages = new URLSearchParams(home[1]);
     const keys = new Set<string>();
     for (const [key, page] of pages) {
-      if ((key !== "recommendedPage" && key !== "watchedPage") || keys.has(key) || !isPageNumber(page)) return null;
+      if (keys.has(key)) return null;
+      if (key === "mediaType" ? page !== "movie" && page !== "tv" : (key !== "recommendedPage" && key !== "watchedPage") || !isPageNumber(page)) return null;
       keys.add(key);
     }
     return value;
   }
-  const match = /^\/(recommended|watched|actors\/([1-9]\d*)|movies\/([1-9]\d*)|catalog\/movies\/([1-9]\d*))(?:\?page=([1-9]\d*))?$/.exec(value);
+  const match = /^\/(recommended|watched|actors\/([1-9]\d*)|movies\/([1-9]\d*)|catalog\/(?:movies|tv)\/([1-9]\d*))(?:\?([^#]+))?$/.exec(value);
   if (!match) return null;
   const id = match[2] || match[3] || match[4];
   if (id && !isPositiveId(id)) return null;
-  if (match[5] && (!isPageNumber(match[5]) || match[3] || match[4])) return null;
+  if (match[5]) {
+    if (match[3] || match[4]) return null;
+    const keys = new Set<string>();
+    for (const [key, item] of new URLSearchParams(match[5])) {
+      if (keys.has(key)) return null;
+      if (key === "mediaType" ? item !== "movie" && item !== "tv" : key !== "page" || !isPageNumber(item)) return null;
+      keys.add(key);
+    }
+  }
   return value;
 }
 
@@ -86,6 +110,6 @@ export function backNavigation(location: NavigationLocation, fallback = "/") {
   const to = from || fallback;
   const trail = from ? readTrail(previous?.trail) : [];
   const state = trail.length ? { from: trail[0], trail: trail.slice(1) } : undefined;
-  const label = to.startsWith("/actors/") ? "返回参演电影" : movieDetailPath.test(to) ? "返回电影详情" : "返回片单";
+  const label = to.startsWith("/actors/") ? "返回参演作品" : movieDetailPath.test(to) ? "返回影视详情" : "返回片单";
   return { to, state, label };
 }

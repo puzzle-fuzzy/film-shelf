@@ -1,4 +1,4 @@
-import type { ActorMovieList, CatalogMovieDetails, Movie, MovieGridList, MovieInput, MovieList } from "@film-shelf/shared";
+import type { ActorMovieList, CatalogMovieDetails, MediaType, MetadataSource, Movie, MovieGridList, MovieInput, MovieList } from "@film-shelf/shared";
 import { and, desc, eq, getTableColumns, inArray, or, sql } from "drizzle-orm";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -7,13 +7,14 @@ import { z } from "zod";
 import { newestMovieOrder, normalizeSearchText, type MovieDatabase } from "./db";
 import { ApiException } from "./errors";
 import { movies } from "./schema";
-import { createPosterStore, localPosterUrl, LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN, type PosterStore } from "./posters";
+import { createPosterStore, doubanPosterSource, localPosterUrl, LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN, type PosterStore } from "./posters";
 import { actorImageSource, localActorImageUrl } from "./actor-images";
 import { createTmdbProvider, type MovieMetadataProvider } from "./tmdb";
-import { actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
+import { createDoubanProvider, tmdbMetadataProvider, type MetadataProvider } from "./metadata";
+import { actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
 
 const { titleSearch: _titleSearch, originalTitleSearch: _originalTitleSearch, watchedOrder: _watchedOrder, ...movieColumns } = getTableColumns(movies);
-const gridMovieColumns = { id: movies.id, title: movies.title, releaseDate: movies.releaseDate, posterUrl: movies.posterUrl };
+const gridMovieColumns = { id: movies.id, title: movies.title, releaseDate: movies.releaseDate, posterUrl: movies.posterUrl, mediaType: movies.mediaType };
 
 function serializeMovie(movie: Movie): Movie {
   return { ...movie, cast: movie.cast.map((actor) => ({ ...actor, profileUrl: localActorImageUrl(actor.profileUrl) })) };
@@ -23,11 +24,13 @@ export interface AppDependencies {
   db: MovieDatabase;
   tmdb?: MovieMetadataProvider;
   tmdbToken?: string;
+  douban?: MetadataProvider;
   posters?: PosterStore;
 }
 
-export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters = createPosterStore() }: AppDependencies) {
+export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban = createDoubanProvider(), posters = createPosterStore() }: AppDependencies) {
   const provider = tmdbToken === undefined ? tmdb : createTmdbProvider(tmdbToken);
+  const providers: Record<MetadataSource, MetadataProvider> = { tmdb: tmdbMetadataProvider(provider), douban };
   const app = new Hono();
   app.use("/api/*", bodyLimit({ maxSize: 256 * 1024, onError: (c) => c.json({ error: { code: "BODY_TOO_LARGE", message: "请求内容过大。" } }, 413) }));
   app.use("/api/*", async (c, next) => {
@@ -52,15 +55,37 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
     return serializeMovie(movie);
   }
 
-  async function insertMovie(input: MovieInput): Promise<Movie> {
-    if (input.tmdbId && db.select({ id: movies.id }).from(movies).where(eq(movies.tmdbId, input.tmdbId)).get()) {
-      throw new ApiException(409, "MOVIE_ALREADY_EXISTS", "这部电影已在片库中，请直接查看现有记录。");
+  function findExternalMovie(source: MetadataSource, mediaType: MediaType, externalId: number) {
+    const identity = source === "tmdb" ? and(eq(movies.mediaType, mediaType), eq(movies.tmdbId, externalId)) : eq(movies.doubanId, externalId);
+    return db.select(movieColumns).from(movies).where(identity).get();
+  }
+
+  function duplicateMovie(): never {
+    throw new ApiException(409, "MOVIE_ALREADY_EXISTS", "这部作品已在片库中，请直接查看现有记录。");
+  }
+
+  async function readMetadata(source: MetadataSource, mediaType: MediaType, externalId: number) {
+    const parsed = movieInputSchema.safeParse(await providers[source].details(externalId, mediaType));
+    if (!parsed.success) throw new ApiException(502, `${source.toUpperCase()}_INVALID_RESPONSE`, "资料源返回的作品格式异常，请稍后重试。");
+    const metadata = parsed.data;
+    const returnedId = source === "tmdb" ? metadata.tmdbId : metadata.doubanId;
+    if (returnedId !== externalId || metadata.mediaType !== mediaType) {
+      throw new ApiException(502, `${source.toUpperCase()}_INVALID_RESPONSE`, "资料源返回的内容与所选作品不一致。");
     }
+    return metadata;
+  }
+
+  async function insertMovie(input: MovieInput): Promise<Movie> {
+    const mediaType = input.mediaType ?? "movie";
+    if ((input.tmdbId && findExternalMovie("tmdb", mediaType, input.tmdbId)) || (input.doubanId && findExternalMovie("douban", mediaType, input.doubanId))) duplicateMovie();
     const posterUrl = await posters.save(input.posterUrl);
     await posters.ensureVariants(posterUrl);
     const timestamp = new Date().toISOString();
     const movie = db.insert(movies).values({
       tmdbId: input.tmdbId ?? null,
+      mediaType,
+      doubanId: input.doubanId ?? null,
+      episodeCount: mediaType === "tv" ? input.episodeCount ?? null : null,
       title: input.title,
       originalTitle: input.originalTitle || "",
       titleSearch: normalizeSearchText(input.title),
@@ -74,17 +99,24 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
       watchedAt: null,
       createdAt: timestamp,
       updatedAt: timestamp,
-    }).onConflictDoNothing({ target: movies.tmdbId }).returning(movieColumns).get();
-    if (!movie) throw new ApiException(409, "MOVIE_ALREADY_EXISTS", "这部电影已在片库中，请直接查看现有记录。");
+    }).onConflictDoNothing().returning(movieColumns).get();
+    if (!movie) duplicateMovie();
     return serializeMovie(movie);
   }
 
-  app.get("/api/health", (c) => c.json({ status: "ok", tmdbConfigured: provider.configured }));
+  app.get("/api/health", (c) => c.json({ status: "ok", tmdbConfigured: provider.configured, providers: { tmdb: provider.configured, douban: douban.configured } }));
   app.get("/api/posters/:filename", (c) => posters.respond(c.req.param("filename")));
   app.get("/api/posters/tmdb/:size/:filename", async (c) => {
     const path = c.req.path;
     if (!LOCAL_TMDB_POSTER_PATH_PATTERN.test(path)) throw new ApiException(404, "POSTER_NOT_FOUND", "没有找到这张海报。");
     const local = await posters.save(path);
+    const cached = local && LOCAL_POSTER_PATH_PATTERN.exec(local);
+    if (!cached) throw new ApiException(502, "POSTER_UNAVAILABLE", "海报暂时无法读取，请稍后重试。");
+    return posters.respond(cached[1]!);
+  });
+  app.get("/api/posters/douban/:encoded", async (c) => {
+    const source = doubanPosterSource(c.req.path);
+    const local = await posters.save(source);
     const cached = local && LOCAL_POSTER_PATH_PATTERN.exec(local);
     if (!cached) throw new ApiException(502, "POSTER_UNAVAILABLE", "海报暂时无法读取，请稍后重试。");
     return posters.respond(cached[1]!);
@@ -98,9 +130,9 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
 
   app.get("/api/actors/:id/movies", async (c) => {
     const personId = idSchema.parse(c.req.param("id"));
-    const { page, pageSize } = actorMoviesQuerySchema.parse(c.req.query());
+    const { page, pageSize, mediaType } = actorMoviesQuerySchema.parse(c.req.query());
     if (!provider.actorFilmography) throw new ApiException(503, "METADATA_UNAVAILABLE", "当前资料源暂不支持演员作品查询，请稍后重试。");
-    const filmography = await provider.actorFilmography(personId);
+    const filmography = await provider.actorFilmography(personId, mediaType);
     const pageMovies = filmography.movies.slice((page - 1) * pageSize, page * pageSize);
     const localMovies = pageMovies.length ? db.select({
       id: movies.id,
@@ -108,13 +140,14 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
       status: movies.status,
       title: movies.title,
       posterUrl: movies.posterUrl,
-    }).from(movies).where(inArray(movies.tmdbId, pageMovies.map((movie) => movie.tmdbId))).all() : [];
+    }).from(movies).where(and(eq(movies.mediaType, mediaType), inArray(movies.tmdbId, pageMovies.map((movie) => movie.tmdbId)))).all() : [];
     const library = new Map(localMovies.map((movie) => [movie.tmdbId, movie]));
     const results = await Promise.all(pageMovies.map(async (movie) => {
       const local = library.get(movie.tmdbId);
       const posterUrl = localPosterUrl(local ? local.posterUrl : movie.posterUrl);
       return {
         ...movie,
+        mediaType,
         title: local ? local.title : movie.title,
         posterUrl,
         posterVariants: await posters.variants(posterUrl),
@@ -132,14 +165,16 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
     return c.json(result);
   });
 
-  app.get("/api/catalog/movies/:tmdbId", async (c) => {
-    const tmdbId = idSchema.parse(c.req.param("tmdbId"));
-    const local = db.select(movieColumns).from(movies).where(eq(movies.tmdbId, tmdbId)).get();
+  async function catalogMovie(tmdbId: number, mediaType: MediaType): Promise<CatalogMovieDetails> {
+    const local = findExternalMovie("tmdb", mediaType, tmdbId);
     let movie: CatalogMovieDetails;
     if (local) {
       const saved = serializeMovie(local);
       movie = {
         tmdbId,
+        mediaType,
+        doubanId: saved.doubanId,
+        episodeCount: saved.episodeCount,
         title: saved.title,
         originalTitle: saved.originalTitle,
         posterUrl: saved.posterUrl,
@@ -152,12 +187,12 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
         libraryStatus: saved.status,
       };
     } else {
-      const parsed = movieInputSchema.safeParse(await provider.details(tmdbId));
-      if (!parsed.success) throw new ApiException(502, "TMDB_INVALID_RESPONSE", "TMDB 返回的电影资料格式异常，请稍后重试。");
-      const metadata = parsed.data;
-      if (metadata.tmdbId !== tmdbId) throw new ApiException(502, "TMDB_INVALID_RESPONSE", "TMDB 返回的电影资料与所选电影不一致。");
+      const metadata = await readMetadata("tmdb", mediaType, tmdbId);
       movie = {
         tmdbId,
+        mediaType,
+        doubanId: null,
+        episodeCount: metadata.episodeCount ?? null,
         title: metadata.title,
         originalTitle: metadata.originalTitle || "",
         posterUrl: localPosterUrl(metadata.posterUrl),
@@ -170,13 +205,17 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
         libraryStatus: null,
       };
     }
-    return c.json({ movie });
-  });
+    return movie;
+  }
+  app.get("/api/catalog/movies/:tmdbId", async (c) => c.json({ movie: await catalogMovie(idSchema.parse(c.req.param("tmdbId")), "movie") }));
+  app.get("/api/catalog/tv/:tmdbId", async (c) => c.json({ movie: await catalogMovie(idSchema.parse(c.req.param("tmdbId")), "tv") }));
 
   app.get("/api/movies", async (c) => {
-    const { status, view, q, page, pageSize } = listQuerySchema.parse(c.req.query());
+    const { status, view, q, page, pageSize, mediaType } = listQuerySchema.parse(c.req.query());
     const keyword = normalizeSearchText(q);
+    const mediaFilter = mediaType ? eq(movies.mediaType, mediaType) : undefined;
     const filter = and(
+      mediaFilter,
       status ? eq(movies.status, status) : undefined,
       keyword ? or(sql`instr(${movies.titleSearch}, ${keyword}) > 0`, sql`instr(${movies.originalTitleSearch}, ${keyword}) > 0`) : undefined,
     );
@@ -185,7 +224,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
       all: sql<number>`count(*)`,
       recommended: sql<number>`coalesce(sum(case when ${movies.status} = 'recommended' then 1 else 0 end), 0)`,
       watched: sql<number>`coalesce(sum(case when ${movies.status} = 'watched' then 1 else 0 end), 0)`,
-    }).from(movies).get()!;
+    }).from(movies).where(mediaFilter).get()!;
     const order = status === "watched" ? [desc(movies.watchedOrder), ...newestMovieOrder] : newestMovieOrder;
     const offset = (page - 1) * pageSize;
     const pagination = { total: count, page, pageSize, counts };
@@ -216,15 +255,18 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, posters 
     return c.json({ results });
   });
 
+  app.get("/api/metadata/search", async (c) => {
+    const { provider: source, mediaType, q } = metadataSearchQuerySchema.parse(c.req.query());
+    const found = await providers[source].search(q, mediaType);
+    const results = found.filter((entry) => entry.provider === source && entry.mediaType === mediaType)
+      .map((entry) => ({ ...entry, posterUrl: localPosterUrl(entry.posterUrl) }));
+    return c.json({ results });
+  });
+
   app.post("/api/movies/import", async (c) => {
-    const { tmdbId, magnetUrl } = importBodySchema.parse(await c.req.json());
-    if (db.select({ id: movies.id }).from(movies).where(eq(movies.tmdbId, tmdbId)).get()) {
-      throw new ApiException(409, "MOVIE_ALREADY_EXISTS", "这部电影已在片库中，请直接查看现有记录。");
-    }
-    const parsed = movieInputSchema.safeParse(await provider.details(tmdbId));
-    if (!parsed.success) throw new ApiException(502, "TMDB_INVALID_RESPONSE", "TMDB 返回的电影资料格式异常，请稍后重试。");
-    const movie = parsed.data;
-    if (movie.tmdbId !== tmdbId) throw new ApiException(502, "TMDB_INVALID_RESPONSE", "TMDB 返回的电影资料与所选电影不一致。");
+    const { provider: source, mediaType, externalId, magnetUrl } = importBodySchema.parse(await c.req.json());
+    if (findExternalMovie(source, mediaType, externalId)) duplicateMovie();
+    const movie = await readMetadata(source, mediaType, externalId);
     return c.json({ movie: await insertMovie({ ...movie, magnetUrl: magnetUrl ?? null }) }, 201);
   });
 

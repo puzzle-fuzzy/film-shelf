@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN } from "./posters";
+import { LOCAL_DOUBAN_POSTER_PATH_PATTERN, LOCAL_POSTER_PATH_PATTERN, LOCAL_TMDB_POSTER_PATH_PATTERN } from "./posters";
 import { LOCAL_ACTOR_IMAGE_PATH_PATTERN } from "./actor-images";
 
 const positiveInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
@@ -10,6 +10,7 @@ const nullableUrl = z.string().trim().max(2048).url().refine((value) => {
 const posterUrl = z.union([
   z.string().regex(LOCAL_POSTER_PATH_PATTERN, "本地海报地址无效"),
   z.string().regex(LOCAL_TMDB_POSTER_PATH_PATTERN, "海报预览地址无效"),
+  z.string().regex(LOCAL_DOUBAN_POSTER_PATH_PATTERN, "豆瓣海报预览地址无效"),
   nullableUrl,
 ]);
 const actorPhotoUrl = z.union([z.string().regex(LOCAL_ACTOR_IMAGE_PATH_PATTERN), z.string().regex(LOCAL_POSTER_PATH_PATTERN), nullableUrl]);
@@ -34,9 +35,15 @@ export const magnetUrlSchema = z.string().max(16000, "磁力链接过长").nulla
   }
 });
 
+export const mediaTypeSchema = z.enum(["movie", "tv"]);
+export const metadataSourceSchema = z.enum(["tmdb", "douban"]);
+
 export const movieInputSchema = z.object({
+  mediaType: mediaTypeSchema.default("movie"),
+  doubanId: positiveInteger.nullable().optional(),
+  episodeCount: positiveInteger.nullable().optional(),
   tmdbId: positiveInteger.nullable().optional(),
-  title: z.string().trim().min(1, "请输入电影名称").max(300),
+  title: z.string().trim().min(1, "请输入作品名称").max(300),
   originalTitle: z.string().trim().max(300).optional(),
   posterUrl: posterUrl.optional(),
   releaseDate: releaseDate.optional(),
@@ -48,17 +55,22 @@ export const movieInputSchema = z.object({
     profileUrl: actorPhotoUrl,
   }).strict()).max(100).optional(),
   magnetUrl: magnetUrlSchema.optional(),
-}).strict();
+}).strict().refine((value) => value.mediaType === "tv" || value.episodeCount == null, { path: ["episodeCount"], message: "电影不能设置剧集集数" });
 
 export const idSchema = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(positiveInteger);
 export const movieStatusSchema = z.enum(["recommended", "watched"]);
 export const statusBodySchema = z.object({ status: movieStatusSchema }).strict();
 export const magnetBodySchema = z.object({ magnetUrl: magnetUrlSchema }).strict();
-export const importBodySchema = z.object({ tmdbId: positiveInteger, magnetUrl: magnetUrlSchema.optional() }).strict();
-export const searchQuerySchema = z.string().trim().min(1, "请输入电影名称").max(200);
+export const importBodySchema = z.union([
+  z.object({ tmdbId: positiveInteger, magnetUrl: magnetUrlSchema.optional() }).strict().transform(({ tmdbId, magnetUrl }) => ({ provider: "tmdb" as const, mediaType: "movie" as const, externalId: tmdbId, magnetUrl })),
+  z.object({ provider: metadataSourceSchema, mediaType: mediaTypeSchema, externalId: positiveInteger, magnetUrl: magnetUrlSchema.optional() }).strict(),
+]);
+export const searchQuerySchema = z.string().trim().min(1, "请输入作品名称").max(200);
+export const metadataSearchQuerySchema = z.object({ provider: metadataSourceSchema, mediaType: mediaTypeSchema, q: searchQuerySchema });
 
 const queryInteger = (max: number, fallback: string) => z.string().regex(/^[1-9]\d*$/).default(fallback).transform(Number).pipe(z.number().int().min(1).max(max));
 export const listQuerySchema = z.object({
+  mediaType: mediaTypeSchema.optional(),
   status: movieStatusSchema.optional(),
   view: z.literal("grid").optional(),
   q: z.string().trim().max(200).default(""),
@@ -66,6 +78,7 @@ export const listQuerySchema = z.object({
   pageSize: queryInteger(100, "20"),
 });
 export const actorMoviesQuerySchema = z.object({
+  mediaType: mediaTypeSchema.default("movie"),
   page: queryInteger(1000000, "1"),
   pageSize: queryInteger(100, "24"),
 });

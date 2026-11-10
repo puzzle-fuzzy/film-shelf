@@ -24,7 +24,10 @@ export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | 
             <div className="flex items-start gap-4">
               <MoviePoster src={movie.posterUrl} title={movie.title} className="h-36 w-24" />
               <div className="flex min-w-0 flex-1 flex-col gap-3 pt-1">
-                <div className="grid gap-1"><span className="font-medium">上映日期</span><span className="text-muted-foreground">{movie.releaseDate || "暂无资料"}</span></div>
+                <Badge variant="outline" className="w-fit">{movie.mediaType === "tv" ? "电视剧" : "电影"}</Badge>
+                <div className="grid gap-1"><span className="font-medium">{movie.mediaType === "tv" ? "首播日期" : "上映日期"}</span><span className="text-muted-foreground">{movie.releaseDate || "暂无资料"}</span></div>
+                {movie.mediaType === "tv" && movie.episodeCount && <p className="text-muted-foreground">共 {movie.episodeCount} 集</p>}
+                <div className="flex flex-wrap gap-3 text-xs">{Number.isSafeInteger(movie.tmdbId) && (movie.tmdbId || 0) > 0 && <a className="underline underline-offset-4" href={`https://www.themoviedb.org/${movie.mediaType === "tv" ? "tv" : "movie"}/${movie.tmdbId}`} target="_blank" rel="noreferrer">TMDB 条目</a>}{Number.isSafeInteger(movie.doubanId) && (movie.doubanId || 0) > 0 && <a className="underline underline-offset-4" href={`https://movie.douban.com/subject/${movie.doubanId}/`} target="_blank" rel="noreferrer">豆瓣条目</a>}</div>
                 <Badge variant="outline" className="w-fit">{movie.status === "watched" ? "已观影" : "推荐"}</Badge>
                 {movie.watchedAt && <p className="text-xs leading-5 text-muted-foreground">{new Intl.DateTimeFormat("zh-CN").format(new Date(movie.watchedAt))} 标记已观影</p>}
               </div>
@@ -32,7 +35,7 @@ export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | 
             <Separator />
             <MovieMagnetEditor key={movie.id} movie={movie} onSaved={onSaved} />
             <Separator />
-            <section className="grid gap-2"><h3 className="font-medium">电影简介</h3><p className="leading-6 whitespace-pre-wrap text-muted-foreground">{movie.overview || "暂无电影简介。"}</p></section>
+            <section className="grid gap-2"><h3 className="font-medium">{movie.mediaType === "tv" ? "剧集简介" : "电影简介"}</h3><p className="leading-6 whitespace-pre-wrap text-muted-foreground">{movie.overview || "暂无简介。"}</p></section>
             <Separator />
             <section className="grid gap-3 pb-2"><h3 className="font-medium">主演</h3>{movie.cast.length === 0 ? <p className="text-muted-foreground">暂无主演资料。</p> : movie.cast.map((actor, index) => <div key={`${actor.name}-${index}`} className="flex items-center gap-3"><MoviePoster src={actor.profileUrl} title={actor.name} className="h-12 w-9 rounded" /><div className="min-w-0"><p className="font-medium">{actor.name}</p>{actor.character && <p className="mt-1 text-xs text-muted-foreground">饰 {actor.character}</p>}</div></div>)}</section>
           </div>

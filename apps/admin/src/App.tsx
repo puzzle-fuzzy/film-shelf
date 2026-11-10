@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from "react";
-import type { Movie, MovieList, MovieStatus } from "@film-shelf/shared";
+import type { MediaType, Movie, MovieList, MovieStatus } from "@film-shelf/shared";
 import { Navigate, Route, Routes, useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -18,6 +18,7 @@ export default function App() {
 function MovieAdmin() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") || "";
+  const mediaType = params.get("mediaType") === "tv" ? "tv" : params.get("mediaType") === "movie" ? "movie" : "all";
   const parsedPage = Number(params.get("page") || 1);
   const page = Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1;
   const parsedSize = Number(params.get("pageSize") || 10);
@@ -26,7 +27,7 @@ function MovieAdmin() {
   const [data, setData] = useState<MovieList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [tmdbConfigured, setTmdbConfigured] = useState<boolean | null>(null);
+  const [providers, setProviders] = useState<{ tmdb: boolean; douban: boolean } | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   const [detail, setDetail] = useState<Movie | null>(null);
   const [changingId, setChangingId] = useState<number | null>(null);
@@ -35,15 +36,17 @@ function MovieAdmin() {
   useEffect(() => { setQuery(q); }, [q]);
   useEffect(() => {
     const controller = new AbortController();
-    api<{ tmdbConfigured: boolean }>("/api/health", { signal: controller.signal }).then((health) => setTmdbConfigured(health.tmdbConfigured)).catch(() => {});
+    api<{ providers: { tmdb: boolean; douban: boolean } }>("/api/health", { signal: controller.signal }).then((health) => { if (!controller.signal.aborted) setProviders(health.providers); }).catch(() => {});
     return () => controller.abort();
   }, [revision]);
   useEffect(() => {
     const controller = new AbortController();
     setLoading(true);
+    setData(null);
     setError(null);
     const search = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
     if (q) search.set("q", q);
+    if (mediaType !== "all") search.set("mediaType", mediaType);
     api<MovieList>(`/api/movies?${search}`, { signal: controller.signal }).then((result) => {
       if (controller.signal.aborted) return;
       if (page > 1 && result.movies.length === 0) {
@@ -53,7 +56,16 @@ function MovieAdmin() {
       } else setData(result);
     }).catch((error) => { if (!controller.signal.aborted) setError(errorMessage(error)); }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [q, page, pageSize, revision, setParams]);
+  }, [q, page, pageSize, mediaType, revision, setParams]);
+
+  function changeMediaType(value: MediaType | "all") {
+    const next = new URLSearchParams(params);
+    next.delete("page");
+    if (value === "all") next.delete("mediaType"); else next.set("mediaType", value);
+    setLoading(true);
+    setData(null);
+    setParams(next);
+  }
 
   function submitSearch(event: FormEvent) {
     event.preventDefault();
@@ -93,13 +105,13 @@ function MovieAdmin() {
         <div className="flex flex-1 flex-col">
           <div className="@container/main flex flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-              <DataTable movies={data?.movies || []} loading={loading} error={error} onRetry={() => setRevision((value) => value + 1)} changingId={changingId} total={data?.total || 0} page={page} pageSize={pageSize} onPage={changePage} onPageSize={changePageSize} query={query} onQuery={setQuery} onSearch={submitSearch} onClearSearch={() => { setQuery(""); const next = new URLSearchParams(params); next.delete("q"); next.delete("page"); setParams(next); }} onDetail={setDetail} onStatus={(movie, status) => void changeStatus(movie, status)} onAdd={() => setAddOpen(true)} />
-              <footer className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 text-[10px] leading-5 text-muted-foreground lg:px-6"><a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" aria-label="TMDB 电影资料来源"><img src="/tmdb.svg" alt="TMDB" width={64} height={8} loading="lazy" decoding="async" className="h-auto w-16" /></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span></footer>
+              <DataTable mediaType={mediaType} onMediaType={changeMediaType} movies={data?.movies || []} loading={loading} error={error} onRetry={() => setRevision((value) => value + 1)} changingId={changingId} total={data?.total || 0} page={page} pageSize={pageSize} onPage={changePage} onPageSize={changePageSize} query={query} onQuery={setQuery} onSearch={submitSearch} onClearSearch={() => { setQuery(""); const next = new URLSearchParams(params); next.delete("q"); next.delete("page"); setParams(next); }} onDetail={setDetail} onStatus={(movie, status) => void changeStatus(movie, status)} onAdd={() => setAddOpen(true)} />
+              <footer className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 text-[10px] leading-5 text-muted-foreground lg:px-6"><a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" aria-label="TMDB 影视资料来源"><img src="/tmdb.svg" alt="TMDB" width={64} height={8} loading="lazy" decoding="async" className="h-auto w-16" /></a><span>This product uses the TMDB API but is not endorsed or certified by TMDB.</span></footer>
             </div>
           </div>
         </div>
       </SidebarInset>
-      <AddMovieDialog open={addOpen} onOpenChange={setAddOpen} tmdbConfigured={tmdbConfigured} onAdded={(movie) => { setRevision((value) => value + 1); toast.success(`《${movie.title}》已加入推荐`); }} />
+      <AddMovieDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} onAdded={(movie) => { setRevision((value) => value + 1); toast.success(`《${movie.title}》已加入推荐`); }} />
       <MovieDetailDialog movie={detail} onClose={() => setDetail(null)} onSaved={(movie) => { setDetail((current) => current?.id === movie.id ? movie : current); setRevision((value) => value + 1); toast.success("磁力链接已保存"); }} />
       <Toaster position="bottom-right" richColors closeButton />
     </SidebarProvider>

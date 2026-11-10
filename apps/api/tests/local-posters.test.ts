@@ -177,7 +177,7 @@ describe("local poster integration", () => {
     const grid = async () => (await app.request("/api/movies?status=recommended&view=grid")).json();
 
     await writeVariant(variants[0]!.filename);
-    const item = { id: movie.id, title: movie.title, releaseDate: movie.releaseDate, posterUrl: movie.posterUrl };
+    const item = { id: movie.id, title: movie.title, releaseDate: movie.releaseDate, posterUrl: movie.posterUrl, mediaType: "movie" };
     expect(await grid()).toEqual({
       movies: [item],
       counts: { all: 1, recommended: 1, watched: 0 },

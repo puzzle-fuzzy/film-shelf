@@ -13,7 +13,8 @@ export function homePosterPriorityCount(pageSize: number) {
   return pageSize === 4 ? pageSize : pageSize / 2;
 }
 
-export const localPosterPath = /^\/api\/posters\/(?:[a-f0-9]{64}|tmdb\/(?:w92|w154|w185|w342|w500|w780|original)\/[A-Za-z0-9_-]+)\.(?:jpg|png|webp)$/;
+// The API validates the decoded Douban source before fetching a same-origin preview.
+export const localPosterPath = /^\/api\/posters\/(?:(?:[a-f0-9]{64}|tmdb\/(?:w92|w154|w185|w342|w500|w780|original)\/[A-Za-z0-9_-]+)\.(?:jpg|png|webp)|douban\/[A-Za-z0-9_-]{1,2048})(?![\s\S])/;
 export const posterGridSizes = "(max-width: 599px) calc((100vw - 52px) / 2), (max-width: 899px) calc((100vw - 88px) / 3), (max-width: 1279px) calc((100vw - 152px) / 4), (max-width: 1440px) calc((100vw - 200px) / 6), 207px";
 
 export function posterSrcSet(variants: PosterVariant[] | undefined) {

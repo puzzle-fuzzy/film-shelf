@@ -29,6 +29,13 @@
       "when": 1793989985949,
       "tag": "0003_watched_report_order",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1794301948323,
+      "tag": "0004_tv_metadata",
+      "breakpoints": true
     }
   ]
 }

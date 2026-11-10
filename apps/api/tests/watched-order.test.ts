@@ -92,12 +92,13 @@ test("watched order migration preserves the entire existing list and its metadat
     previousIds = (legacy.prepare("SELECT id FROM movies WHERE status = 'watched' ORDER BY created_at DESC, id DESC").all() as { id: number }[]).map(row => row.id);
     expect(previousIds).toEqual([3, 2, 1]);
   } finally {
-    legacy.close();
+    legacy.close(true);
   }
   let upgraded = createDatabase(path);
   try {
     const rows = upgraded.sqlite.prepare("SELECT * FROM movies ORDER BY id").all() as Record<string, unknown>[];
-    expect(rows.map(({ watched_order: _, ...row }) => row)).toEqual(original!);
+    expect(rows.map(({ watched_order: _, media_type: _media, douban_id: _douban, episode_count: _episodes, ...row }) => row)).toEqual(original!);
+    expect(rows.every((row) => row.media_type === "movie" && row.douban_id === null && row.episode_count === null)).toBe(true);
     expect(rows.map(row => row.watched_order)).toEqual([1, 2, 3, null]);
     const reader = createApp({ db: upgraded.db, tmdbToken: "" });
     const result = await (await reader.request("/api/movies?status=watched")).json();

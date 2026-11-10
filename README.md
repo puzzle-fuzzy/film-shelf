@@ -1,12 +1,14 @@
 # Film Shelf
 
-个人观影记录。管理端通过片名搜索 TMDB，确认电影后自动保存本地海报、上映日期、简介、主演，并归入「推荐」；看完后手动切换为「已观影」。用户端首页依次展示「推荐」和「近日观影」，每个区块分页显示两行海报。点击电影在当前标签页打开详情；有磁力链接时展示完整链接及复制按钮。点击演员可浏览 TMDB 收录的全部参演电影，并查看每部作品的片库状态和详情。
+个人影视记录。管理端可选择「电影 / 电视剧」和「TMDB / 豆瓣」，通过名称搜索，核对年份、国家和季别后导入。导入会保存本地主封面、上映或首播日期、简介、主演和可用的剧集集数，并归入「推荐」；看完后手动切换为「已观影」。用户端首页依次展示「推荐」和「近日观影」，可筛选电影或电视剧，每个区块分页显示两行海报。点击作品查看详情；有磁力链接时展示完整链接及复制按钮。TMDB 演员可浏览其参演电影或电视剧，并查看片库状态和详情。
+
+每条记录对应所选资料源中的一个条目。TMDB 可能按整剧收录，豆瓣可能每季一个条目；集数和「已观影」均针对选中的条目，不代表逐集观看进度。不同来源不会按同名自动合并，跨来源导入前请核对是否已在片库中。
 
 ## 技术与目录
 
 - Bun workspace，统一用 Bun 安装依赖、运行和测试。
 - `apps/admin`：React、React Router、Vite、Tailwind CSS，基于 shadcn/ui `dashboard-01`。
-- `apps/api`：Hono + TypeScript、Drizzle ORM、Bun SQLite。
+- `apps/api`：Hono + TypeScript、Drizzle ORM、Bun SQLite，内置 TMDB 与匿名豆瓣资料适配器，不依赖额外 CLI。
 - `packages/shared`：前后端共用的数据类型。
 - `apps/web`：React、React Router 用户端，在同一首页浏览「推荐」和「近日观影」，点击电影查看详情。
 
@@ -29,7 +31,7 @@ DATABASE_PATH=./data/film-shelf.sqlite
 PORT=3101
 ```
 
-Token 只在服务端读取，不要添加 `VITE_` 前缀或提交到 Git。未配置时仍可浏览本地数据和切换状态，电影搜索及远程演员作品查询会提示配置缺失。修改 Token 后重启开发服务。
+Token 只在服务端读取，不要添加 `VITE_` 前缀或提交到 Git。未配置时可使用豆瓣搜索和导入，也可浏览本地数据和切换状态；TMDB 搜索及远程演员作品查询会提示配置缺失。修改 Token 后重启开发服务。豆瓣公开查询不需要登录或 Cookie，也不需要安装 douban-cli；站点限流、安全验证或接口变化时会提示错误，不会自动尝试绕过验证。
 
 ```sh
 bun run dev
@@ -43,18 +45,18 @@ bun run dev
 
 ## 使用
 
-1. 点击「添加电影」，输入中文或原文片名。
-2. 从候选结果核对电影名、海报、上映日期，选中后加入推荐。
-3. 所有电影保存在同一张表格中，点击片名查看已保存的简介、上映日期与主演。
+1. 点击「添加影视」，选择资料来源和作品类型，输入中文或原文名称。未配置 TMDB Token 时默认使用豆瓣。
+2. 从候选结果核对名称、海报、年份、国家和季别，点击「加入推荐」获取完整详情后保存；搜索候选缺少日期或简介时，导入会重新查询完整资料。
+3. 所有作品保存在同一张表格中，可筛选电影或电视剧，点击名称查看已保存的简介、上映或首播日期、主演及剧集集数。
 4. 看完后直接在表格的状态列切换为「已观影」，需要时可切回「推荐」。
 5. 添加电影时可填写磁力链接；已有电影点击「磁力链接」列或片名打开详情后，可编辑并保存链接，留空保存可清除。
-6. 用户端点击主演进入演员作品页，作品按上映日期倒序分页展示，并标记「推荐」「已观影」「未收录」。未收录电影也能查看详情，浏览不会自动加入片库；录入和状态修改仍在管理端完成。
+6. 用户端点击有 TMDB 人物 ID 的主演进入演员作品页，可切换电影或电视剧；作品按上映或首播日期倒序分页展示，并标记「推荐」「已观影」「未收录」。未收录 TMDB 作品也能查看只读详情，浏览不会自动加入片库。豆瓣演员首版只展示姓名，不通过同名猜测人物关联；录入和状态修改仍在管理端完成。
 
 「已观影」片单按标记已观影的先后倒序展示，新标记的电影排在前面；编辑磁力链接或重复标记不会改变顺序。切回推荐后再次标记已观影，会作为新的记录排到前面。升级前已有影片保持原来的相对顺序。
 
-数据保存到本地 SQLite，重启服务后仍保留。TMDB ID 唯一，重复导入会明确提示。
+数据保存到本地 SQLite，重启服务后仍保留。同一类型的 TMDB ID 唯一，豆瓣 ID 唯一，重复导入会明确提示；TMDB 电影与电视剧使用相同数字 ID 时可以并存。升级会原位新增媒体类型、豆瓣 ID 和集数字段，旧记录默认为电影，保留已有本地 ID、状态、观影顺序、磁力链接及图片引用。
 
-电影海报会下载到项目根目录 `data/posters/`，数据库及页面使用 `/api/posters/…` 本地地址。搜索候选、演员作品海报和演员照片在浏览器首次请求该图片时缓存到本地。新电影须完成原图保存后才入库，服务会同时为适合缩小的海报生成 200、360、480 像素宽的 WebP 缩略图。首页按屏幕选择缩略图，详情页使用原图。启动时会保存已有影片的远程海报，并补齐缺失的缩略图。没有图片时显示占位图。备份片库时请同时备份整个 `data/` 目录。
+影视海报会下载到项目根目录 `data/posters/`，数据库及页面使用 `/api/posters/…` 本地地址。搜索候选、演员作品海报和演员照片在浏览器首次请求该图片时缓存到本地。每部作品保存一张主封面；豆瓣导入优先使用详情接口实际返回的高清图，搜索中的签名小图仅作预览。新作品须完成原图保存后才入库，服务会同时为适合缩小的海报生成 200、360、480 像素宽的 WebP 缩略图。首页按屏幕选择缩略图，详情页使用原图。启动时会保存已有影片的远程海报，并补齐缺失的缩略图。没有图片时显示占位图。备份片库时请同时备份整个 `data/` 目录。
 
 自动生成缩略图需要在服务环境中提供 `cwebp` 1.6.0 和 `ffprobe`，也可以用 `FILM_SHELF_CWEBP` 指定 `cwebp` 的路径。原图太小、缩略图无法减小文件体积或暂时无法生成时，首页会使用原图。
 
@@ -79,16 +81,18 @@ bun run start
 | --- | --- | --- |
 | GET | `/api/health` | 服务及 TMDB 配置状态 |
 | GET | `/api/tmdb/search?q=电影名` | 搜索 TMDB 候选 |
-| POST | `/api/movies/import` | 传入 `{ "tmdbId": 550 }`，可附带 `magnetUrl`；服务器获取完整资料后加入推荐 |
+| GET | `/api/metadata/search?provider=douban&mediaType=tv&q=我的大叔` | 按来源和类型搜索，返回带 `provider`、`mediaType`、`externalId` 的候选；来源可为 `tmdb` 或 `douban` |
+| POST | `/api/movies/import` | 传入 `{ "provider": "douban", "mediaType": "tv", "externalId": 27602137 }`，可附带 `magnetUrl`；旧 `{ "tmdbId": 550 }` 请求仍表示 TMDB 电影 |
 | POST | `/api/movies` | Codex 直接录入已核实的电影资料 |
-| GET | `/api/movies?status=recommended&page=1&pageSize=20&q=片名` | 分页列表，status 和 q 可省略 |
+| GET | `/api/movies?status=recommended&mediaType=tv&page=1&pageSize=20&q=片名` | 分页列表，status、mediaType 和 q 可省略；不传类型时返回全部作品 |
 | GET | `/api/movies/:id` | 查看电影详情 |
-| GET | `/api/actors/:id/movies?page=1&pageSize=24` | 通过 TMDB 演员 ID 查看全部参演电影，附带当前片库状态 |
+| GET | `/api/actors/:id/movies?mediaType=tv&page=1&pageSize=24` | 通过 TMDB 演员 ID 查看参演作品，附带当前片库状态；类型默认 movie |
 | GET | `/api/catalog/movies/:tmdbId` | 只读电影详情；已收录时优先返回本地资料，否则获取 TMDB 资料，不新增片库记录 |
+| GET | `/api/catalog/tv/:tmdbId` | 对应的 TMDB 电视剧只读详情，与同号电影隔离 |
 | PATCH | `/api/movies/:id/status` | `{ "status": "watched" }` 或 `{ "status": "recommended" }` |
 | PATCH | `/api/movies/:id/magnet` | `{ "magnetUrl": "magnet:?xt=urn:btih:…" }`；传入 null 或空白字符串可清除 |
 
-直接录入格式如下，`title` 必填，其余字段可省略。所有新电影默认推荐；只有用户手动标记后才成为已观影。
+直接录入格式如下，`title` 必填，其余字段可省略。`mediaType` 默认 `movie`，可选 `tv`；`doubanId` 可空，`episodeCount` 仅电视剧可填正整数，未知时留空或 null。所有新作品默认推荐；只有用户手动标记后才成为已观影。
 
 ```json
 {
@@ -109,6 +113,6 @@ bun run start
 
 ## 资料来源
 
-电影资料与图片来自 [TMDB](https://www.themoviedb.org/)。This product uses the TMDB API but is not endorsed or certified by TMDB.
+影视资料与图片来自所选的 [TMDB](https://www.themoviedb.org/) 或[豆瓣](https://movie.douban.com/)，详情页保留来源条目链接。豆瓣查询方式参考 [douban-cli](https://github.com/Marvae/douban-cli)，本项目自行实现服务端适配器。This product uses the TMDB API but is not endorsed or certified by TMDB.
 
 模板来源：[shadcn/ui dashboard-01](https://ui.shadcn.com/view/new-york-v4/dashboard-01)。沿用官方 new-york-v4 页面框架、侧栏、顶栏和表格样式，仅将数据及操作改为观影管理。管理端只有一个「电影管理」菜单和一张电影表格；不提供概览卡片、图表或按状态拆分的菜单。

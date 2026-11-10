@@ -41,9 +41,9 @@ export function createDatabase(path?: string) {
         }
       });
     }
-    return { db, sqlite, close: () => sqlite.close() };
+    return { db, sqlite, close: () => sqlite.close(true) };
   } catch (error) {
-    sqlite.close();
+    sqlite.close(true);
     throw error;
   }
 }

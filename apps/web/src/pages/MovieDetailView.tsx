@@ -18,22 +18,25 @@ export function MovieDetailView({ movie, backTo, backState, backLabel = "返回�
         {backLabel}
       </Link>
       <div className="detail-layout">
-        <aside className="detail-poster-column" aria-label="电影海报">
+        <aside className="detail-poster-column" aria-label="影视海报">
           <DetailPoster key={movie.posterUrl} src={movie.posterUrl} title={movie.title} />
         </aside>
         <div className="detail-content">
           <header className="detail-introduction">
             <h1>{movie.title}</h1>
+            <p className="detail-media-label"><span className="media-badge">{movie.mediaType === "tv" ? "电视剧" : "电影"}</span></p>
             {movie.originalTitle && movie.originalTitle !== movie.title && <p className="detail-original-title">{movie.originalTitle}</p>}
             <dl className="detail-facts">
-              <div><dt>上映日期</dt><dd>{movie.releaseDate || "暂无资料"}</dd></div>
+              <div><dt>{movie.mediaType === "tv" ? "首播日期" : "上映日期"}</dt><dd>{movie.releaseDate || "暂无资料"}</dd></div>
+              {movie.mediaType === "tv" && movie.episodeCount && <div><dt>集数</dt><dd>{movie.episodeCount} 集</dd></div>}
+              {(Number.isSafeInteger(movie.tmdbId) && (movie.tmdbId || 0) > 0 || Number.isSafeInteger(movie.doubanId) && (movie.doubanId || 0) > 0) && <div><dt>资料来源</dt><dd className="detail-source-links">{Number.isSafeInteger(movie.tmdbId) && (movie.tmdbId || 0) > 0 && <a href={`https://www.themoviedb.org/${movie.mediaType === "tv" ? "tv" : "movie"}/${movie.tmdbId}`} target="_blank" rel="noreferrer">TMDB 条目 ↗</a>}{Number.isSafeInteger(movie.doubanId) && (movie.doubanId || 0) > 0 && <a href={`https://movie.douban.com/subject/${movie.doubanId}/`} target="_blank" rel="noreferrer">豆瓣条目 ↗</a>}</dd></div>}
               {watchedDate && <div><dt>观影日期</dt><dd>{watchedDate}</dd></div>}
             </dl>
           </header>
 
           <section className="detail-section" aria-labelledby="detail-overview-heading">
-            <h2 id="detail-overview-heading">电影简介</h2>
-            <p className="detail-overview">{movie.overview || "暂无电影简介。"}</p>
+            <h2 id="detail-overview-heading">{movie.mediaType === "tv" ? "剧集简介" : "电影简介"}</h2>
+            <p className="detail-overview">{movie.overview || "暂无简介。"}</p>
           </section>
 
           {magnet && <MagnetSection magnet={magnet} />}
@@ -50,7 +53,7 @@ export function MovieDetailView({ movie, backTo, backState, backLabel = "返回�
               </>;
               const hasPersonId = typeof actor.tmdbPersonId === "number" && Number.isSafeInteger(actor.tmdbPersonId) && actor.tmdbPersonId > 0;
               return <li key={`${actor.tmdbPersonId || actor.name}-${index}`}>
-                {hasPersonId ? <Link className="detail-actor-item detail-actor-link" to={`/actors/${actor.tmdbPersonId}`} state={nextNavigationState(location)} aria-label={`查看${actor.name}的参演电影`}>{content}</Link> : <span className="detail-actor-item">{content}</span>}
+                {hasPersonId ? <Link className="detail-actor-item detail-actor-link" to={`/actors/${actor.tmdbPersonId}${movie.mediaType === "tv" ? "?mediaType=tv" : ""}`} state={nextNavigationState(location)} aria-label={`查看${actor.name}的参演作品`}>{content}</Link> : <span className="detail-actor-item">{content}</span>}
               </li>;
             })}</ul> : <p className="detail-muted">暂无主演资料。</p>}
           </section>

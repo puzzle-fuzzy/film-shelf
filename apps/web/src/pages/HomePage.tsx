@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import type { MovieGridList, MovieStatus } from "@film-shelf/shared";
+import type { MediaType, MovieGridList, MovieStatus } from "@film-shelf/shared";
 import { homeGridLayouts, homePosterPriorityCount } from "@film-shelf/shared/home-grid";
 import { Link, Navigate, useLocation, useNavigate } from "react-router";
 import { FilmIcon } from "../components/FilmIcon";
 import { Poster } from "../components/Poster";
 import { getMovies } from "../lib/api";
-import { movieDetailLink, pageFromSearch } from "../lib/navigation";
+import { homeLocation, mediaTypeFromSearch, movieDetailLink, pageFromSearch } from "../lib/navigation";
 
 export const recentAnchor = "#recently-watched";
 
@@ -26,20 +26,13 @@ function subscribeToPageSize(onChange: () => void) {
   };
 }
 
-function homeLocation(recommendedPage: number, watchedPage: number, hash = "") {
-  const query = new URLSearchParams();
-  if (recommendedPage > 1) query.set("recommendedPage", String(recommendedPage));
-  if (watchedPage > 1) query.set("watchedPage", String(watchedPage));
-  const search = query.toString();
-  return { pathname: "/", search: search ? `?${search}` : "", hash };
-}
-
 export function LegacyLibraryRedirect({ status }: { status: MovieStatus }) {
   const location = useLocation();
   const pageSize = useSyncExternalStore(subscribeToPageSize, getPageSize);
   const legacyPage = pageFromSearch(new URLSearchParams(location.search));
   const page = Math.min(1_000_000, (legacyPage - 1) * (24 / pageSize) + 1);
-  const to = status === "watched" ? homeLocation(1, page, recentAnchor) : homeLocation(page, 1);
+  const mediaType = mediaTypeFromSearch(new URLSearchParams(location.search));
+  const to = status === "watched" ? homeLocation(1, page, recentAnchor, mediaType) : homeLocation(page, 1, "", mediaType);
   return <Navigate to={to} replace state={location.state} />;
 }
 
@@ -48,10 +41,11 @@ export function HomePage() {
   const navigate = useNavigate();
   const pageSize = useSyncExternalStore(subscribeToPageSize, getPageSize);
   const search = new URLSearchParams(location.search);
+  const mediaType = mediaTypeFromSearch(search);
   const recommendedPage = pageFromSearch(search, "recommendedPage");
   const watchedPage = pageFromSearch(search, "watchedPage");
-  const recommended = useShelf("recommended", recommendedPage, pageSize);
-  const watched = useShelf("watched", watchedPage, pageSize);
+  const recommended = useShelf("recommended", recommendedPage, pageSize, mediaType);
+  const watched = useShelf("watched", watchedPage, pageSize, mediaType);
   const finalRecommended = limitPage(recommendedPage, recommended.data);
   const finalWatched = limitPage(watchedPage, watched.data);
   const adjusting = finalRecommended !== recommendedPage || finalWatched !== watchedPage;
@@ -61,9 +55,9 @@ export function HomePage() {
 
   useEffect(() => {
     if (adjusting) {
-      navigate(homeLocation(finalRecommended, finalWatched, location.hash), { replace: true, state: location.state });
+      navigate(homeLocation(finalRecommended, finalWatched, location.hash, mediaType), { replace: true, state: location.state });
     }
-  }, [adjusting, finalRecommended, finalWatched, location.hash, location.state, navigate]);
+  }, [adjusting, finalRecommended, finalWatched, location.hash, location.state, mediaType, navigate]);
 
   useEffect(() => {
     if (location.hash !== recentAnchor) {
@@ -77,10 +71,11 @@ export function HomePage() {
 
   return (
     <div className="home-shelves">
+      <fieldset className="media-filter"><legend>作品类型</legend>{([undefined, "movie", "tv"] as const).map((value) => <label key={value || "all"}><input type="radio" name="shelf-media-type" checked={mediaType === value} onChange={() => navigate(homeLocation(1, 1, "", value), { state: location.state })} />{value === "tv" ? "电视剧" : value === "movie" ? "电影" : "全部"}</label>)}</fieldset>
       <MovieShelf status="recommended" shelf={recommended} page={recommendedPage} pageSize={pageSize}
-        onPage={(page) => navigate(homeLocation(page, watchedPage), { state: location.state })} />
+        onPage={(page) => navigate(homeLocation(page, watchedPage, "", mediaType), { state: location.state })} />
       <MovieShelf status="watched" shelf={watched} page={watchedPage} pageSize={pageSize}
-        onPage={(page) => navigate(homeLocation(recommendedPage, page, recentAnchor), { state: location.state })} />
+        onPage={(page) => navigate(homeLocation(recommendedPage, page, recentAnchor, mediaType), { state: location.state })} />
     </div>
   );
 }
@@ -91,30 +86,31 @@ function limitPage(page: number, data: MovieGridList | undefined) {
 
 interface ShelfResult {
   request: string;
+  mediaType?: MediaType;
   data?: MovieGridList;
   error?: string;
 }
 
-function useShelf(status: MovieStatus, page: number, pageSize: number) {
+function useShelf(status: MovieStatus, page: number, pageSize: number, mediaType?: MediaType) {
   const [result, setResult] = useState<ShelfResult | null>(null);
   const [revision, setRevision] = useState(0);
-  const request = `${status}:${page}:${pageSize}:${revision}`;
+  const request = `${status}:${page}:${pageSize}:${mediaType || "all"}:${revision}`;
   const current = result?.request === request ? result : null;
 
   useEffect(() => {
     const controller = new AbortController();
-    getMovies(status, page, pageSize, controller.signal).then((data) => {
-      if (!controller.signal.aborted) setResult({ request, data });
+    getMovies(status, page, pageSize, controller.signal, mediaType).then((data) => {
+      if (!controller.signal.aborted) setResult({ request, mediaType, data });
     }).catch((error: unknown) => {
       if (controller.signal.aborted) return;
       setResult({ request, error: error instanceof Error ? error.message : "暂时无法载入片单，请稍后重试。" });
     });
     return () => controller.abort();
-  }, [page, pageSize, request, status]);
+  }, [page, pageSize, mediaType, request, status]);
 
   return {
     data: current?.data,
-    previous: !current && result?.data?.pageSize === pageSize ? result.data : undefined,
+    previous: !current && result?.mediaType === mediaType && result?.data?.pageSize === pageSize ? result.data : undefined,
     error: current?.error,
     loading: !current,
     retry: () => setRevision((value) => value + 1),
@@ -145,7 +141,7 @@ function MovieShelf({ status, shelf, page, pageSize, onPage }: {
     <section className="home-shelf" id={sectionId} aria-labelledby={`${sectionId}-title`} aria-busy={loading}>
       <div className="page-heading">
         <Heading className="home-shelf-title" id={`${sectionId}-title`}>{title}</Heading>
-        <span className="movie-count" role="status">{loading ? "载入中…" : data ? `${data.total} 部电影` : ""}</span>
+        <span className="movie-count" role="status">{loading ? "载入中…" : data ? `${data.total} 部作品` : ""}</span>
       </div>
       {error ? (
         <div className="empty-state" role="alert">
@@ -153,7 +149,7 @@ function MovieShelf({ status, shelf, page, pageSize, onPage }: {
           <button type="button" className="outline-button" onClick={retry}>重新加载</button>
         </div>
       ) : loading && !shown ? (
-        <div className="movie-grid" aria-label="正在载入电影">
+        <div className="movie-grid" aria-label="正在载入影视">
           {Array.from({ length: pageSize }, (_, index) => <div key={index} className="card-skeleton" aria-hidden="true"><span /><i /><i /></div>)}
         </div>
       ) : shown?.movies.length ? (
@@ -169,15 +165,15 @@ function MovieShelf({ status, shelf, page, pageSize, onPage }: {
               />
               <span className="home-card-caption">
                 <span className="card-title">{movie.title}</span>
-                <span className="card-year">{movie.releaseDate?.slice(0, 4) || "上映日期未知"}</span>
+                <span className="card-year"><span className="media-badge">{movie.mediaType === "tv" ? "电视剧" : "电影"}</span> {movie.releaseDate?.slice(0, 4) || (movie.mediaType === "tv" ? "首播日期未知" : "上映日期未知")}</span>
               </span>
             </Link>
           ))}
         </div>
       ) : (
         <div className="empty-state">
-          <FilmIcon /><h3>{watched ? "还没有已观影的电影" : "还没有推荐电影"}</h3>
-          <p>{watched ? "看过的电影会展示在这里。" : "片单中暂时没有推荐的电影。"}</p>
+          <FilmIcon /><h3>{watched ? "还没有已观影的作品" : "还没有推荐作品"}</h3>
+          <p>{watched ? "看过的作品会展示在这里。" : "片单中暂时没有推荐的作品。"}</p>
         </div>
       )}
       {shown && pages > 1 && !error && (

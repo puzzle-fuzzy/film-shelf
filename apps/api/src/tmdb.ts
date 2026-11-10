@@ -1,12 +1,13 @@
-import type { ActorSummary, MovieInput, SearchMovie } from "@film-shelf/shared";
+import type { ActorSummary, MediaType, MovieInput, SearchMovie } from "@film-shelf/shared";
 import { z } from "zod";
 import { ApiException } from "./errors";
+import { createMetadataCache } from "./metadata-cache";
 
 export interface MovieMetadataProvider {
   readonly configured: boolean;
-  search(query: string): Promise<SearchMovie[]>;
-  details(tmdbId: number): Promise<MovieInput>;
-  actorFilmography?(personId: number): Promise<ActorFilmography>;
+  search(query: string, mediaType?: MediaType): Promise<SearchMovie[]>;
+  details(tmdbId: number, mediaType?: MediaType): Promise<MovieInput>;
+  actorFilmography?(personId: number, mediaType?: MediaType): Promise<ActorFilmography>;
 }
 
 export interface ActorFilmography {
@@ -23,6 +24,28 @@ const movieSummarySchema = z.object({
   overview: z.string().optional().default(""),
 });
 const searchResponseSchema = z.object({ results: z.array(movieSummarySchema) });
+const tvSummarySchema = z.object({
+  id: z.number().int().positive(),
+  name: z.string(),
+  original_name: z.string().optional().default(""),
+  poster_path: z.string().nullable().optional().default(null),
+  first_air_date: z.string().optional().default(""),
+  overview: z.string().optional().default(""),
+  origin_country: z.array(z.string()).optional(),
+});
+const tvSearchResponseSchema = z.object({ results: z.array(tvSummarySchema) });
+const tvDetailResponseSchema = tvSummarySchema.extend({
+  number_of_episodes: z.number().int().nonnegative().nullable().optional().default(null),
+  aggregate_credits: z.object({
+    cast: z.array(z.object({
+      id: z.number().int().positive().optional(),
+      name: z.string(),
+      roles: z.array(z.object({ character: z.string().optional().default("") })).default([]),
+      profile_path: z.string().nullable().optional().default(null),
+      order: z.number().optional().default(9999),
+    })).default([]),
+  }),
+});
 const detailResponseSchema = movieSummarySchema.extend({
   credits: z.object({
     cast: z.array(z.object({
@@ -42,29 +65,9 @@ const personResponseSchema = z.object({
     cast: z.array(movieSummarySchema.extend({ character: z.string().optional().default("") })).default([]),
   }),
 });
-
-function createMetadataCache<T>() {
-  const entries = new Map<number, { expiresAt: number; value: T }>();
-  const pending = new Map<number, Promise<T>>();
-  return async (key: number, load: () => Promise<T>): Promise<T> => {
-    const entry = entries.get(key);
-    if (entry && entry.expiresAt > Date.now()) {
-      entries.delete(key);
-      entries.set(key, entry);
-      return entry.value;
-    }
-    entries.delete(key);
-    const existing = pending.get(key);
-    if (existing) return existing;
-    const request = load().then((value) => {
-      entries.set(key, { expiresAt: Date.now() + 10 * 60 * 1000, value });
-      while (entries.size > 100) entries.delete(entries.keys().next().value!);
-      return value;
-    }).finally(() => { pending.delete(key); });
-    pending.set(key, request);
-    return request;
-  };
-}
+const tvPersonResponseSchema = personResponseSchema.omit({ movie_credits: true }).extend({
+  tv_credits: z.object({ cast: z.array(tvSummarySchema.extend({ character: z.string().optional().default("") })).default([]) }),
+});
 
 function imageUrl(path: string | null, size: "w185" | "w500") {
   return path && /^\/[A-Za-z0-9_.-]+$/.test(path) ? `https://image.tmdb.org/t/p/${size}${path}` : null;
@@ -81,11 +84,26 @@ function toSearchMovie(movie: z.infer<typeof movieSummarySchema>): SearchMovie {
   };
 }
 
+function toTvSummary(show: z.infer<typeof tvSummarySchema>): Omit<SearchMovie, "countries" | "year"> {
+  return {
+    mediaType: "tv", tmdbId: show.id, title: show.name || show.original_name,
+    originalTitle: show.original_name, posterUrl: imageUrl(show.poster_path, "w500"),
+    releaseDate: show.first_air_date || null, overview: show.overview,
+  };
+}
+
+function toSearchTv(show: z.infer<typeof tvSummarySchema>): SearchMovie {
+  return {
+    ...toTvSummary(show),
+    ...(show.origin_country === undefined ? {} : { countries: show.origin_country }),
+  };
+}
+
 export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN || "", fetcher: typeof fetch = fetch): MovieMetadataProvider {
   const accessToken = token.trim();
   const cachedDetails = createMetadataCache<MovieInput>();
   const cachedFilmography = createMetadataCache<ActorFilmography>();
-  async function request<T>(path: string, params: Record<string, string>, schema: z.ZodType<T>, resource: "movie" | "person" = "movie"): Promise<T> {
+  async function request<T>(path: string, params: Record<string, string>, schema: z.ZodType<T>, resource: "movie" | "tv" | "person" = "movie"): Promise<T> {
     if (!accessToken) throw new ApiException(503, "TMDB_NOT_CONFIGURED", "请先在项目 .env 中配置 TMDB_READ_ACCESS_TOKEN，然后重启服务。");
     const url = new URL(`https://api.themoviedb.org/3/${path}`);
     url.search = new URLSearchParams({ language: "zh-CN", ...params }).toString();
@@ -104,6 +122,7 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
     if (response.status === 401 || response.status === 403) throw new ApiException(502, "TMDB_AUTH_FAILED", "TMDB Token 无效或没有访问权限，请检查服务端配置。");
     if (response.status === 404) {
       if (resource === "person") throw new ApiException(404, "TMDB_PERSON_NOT_FOUND", "TMDB 中没有找到这位演员。");
+      if (resource === "tv") throw new ApiException(404, "TMDB_TV_NOT_FOUND", "TMDB 中没有找到这部电视剧。");
       throw new ApiException(404, "TMDB_MOVIE_NOT_FOUND", "TMDB 中没有找到这部电影。");
     }
     if (response.status === 429) throw new ApiException(429, "TMDB_RATE_LIMITED", "TMDB 请求过于频繁，请稍后重试。");
@@ -117,12 +136,35 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
 
   return {
     configured: accessToken.length > 0,
-    async search(query) {
+    async search(query, mediaType = "movie") {
+      if (mediaType === "tv") {
+        const data = await request("search/tv", { query, include_adult: "false", page: "1" }, tvSearchResponseSchema, "tv");
+        return data.results.map(toSearchTv);
+      }
       const data = await request("search/movie", { query, include_adult: "false", page: "1" }, searchResponseSchema);
       return data.results.map(toSearchMovie);
     },
-    details(tmdbId) {
-      return cachedDetails(tmdbId, async () => {
+    details(tmdbId, mediaType = "movie") {
+      return cachedDetails(`${mediaType}:${tmdbId}`, async () => {
+        if (mediaType === "tv") {
+          const data = await request(`tv/${tmdbId}`, { append_to_response: "aggregate_credits" }, tvDetailResponseSchema, "tv");
+          let overview = data.overview;
+          if (!overview.trim()) {
+            // Translation coverage is optional; aggregate credits remain from the full-show request.
+            try {
+              const english = await request(`tv/${tmdbId}`, { language: "en-US" }, tvSummarySchema, "tv");
+              overview = english.overview || overview;
+            } catch { /* Preserve the usable Chinese result when the optional translation is unavailable. */ }
+          }
+          return {
+            ...toTvSummary(data), mediaType: "tv", episodeCount: data.number_of_episodes || null, overview,
+            cast: [...data.aggregate_credits.cast].sort((a, b) => a.order - b.order).slice(0, 20).map(person => ({
+              ...(person.id === undefined ? {} : { tmdbPersonId: person.id }), name: person.name,
+              character: [...new Set(person.roles.map(role => role.character.trim()).filter(Boolean))].join(" / "),
+              profileUrl: imageUrl(person.profile_path, "w185"),
+            })),
+          };
+        }
         const data = await request(`movie/${tmdbId}`, { append_to_response: "credits" }, detailResponseSchema);
         const { tmdbId: id, ...summary } = toSearchMovie(data);
         return {
@@ -137,20 +179,25 @@ export function createTmdbProvider(token = process.env.TMDB_READ_ACCESS_TOKEN ||
         };
       });
     },
-    actorFilmography(personId) {
-      return cachedFilmography(personId, async () => {
-        const data = await request(`person/${personId}`, { append_to_response: "movie_credits" }, personResponseSchema, "person");
+    actorFilmography(personId, mediaType = "movie") {
+      return cachedFilmography(`${mediaType}:${personId}`, async () => {
+        const data = mediaType === "tv"
+          ? await request(`person/${personId}`, { append_to_response: "tv_credits" }, tvPersonResponseSchema, "person")
+          : await request(`person/${personId}`, { append_to_response: "movie_credits" }, personResponseSchema, "person");
         if (data.id !== personId) throw new ApiException(502, "TMDB_INVALID_RESPONSE", "TMDB 返回的演员资料与所选演员不一致。");
         const credits = new Map<number, SearchMovie & { character: string }>();
         const characterSets = new Map<number, Set<string>>();
-        for (const credit of data.movie_credits.cast) {
+        const mappedCredits = "tv_credits" in data
+          ? data.tv_credits.cast.map(credit => ({ ...toSearchTv(credit), character: credit.character }))
+          : data.movie_credits.cast.map(credit => ({ ...toSearchMovie(credit), character: credit.character }));
+        for (const credit of mappedCredits) {
           const character = credit.character.trim();
-          const existing = credits.get(credit.id);
+          const existing = credits.get(credit.tmdbId);
           if (!existing) {
-            credits.set(credit.id, { ...toSearchMovie(credit), character });
-            characterSets.set(credit.id, new Set(character ? [character] : []));
+            credits.set(credit.tmdbId, { ...credit, character });
+            characterSets.set(credit.tmdbId, new Set(character ? [character] : []));
           } else if (character) {
-            const characters = characterSets.get(credit.id)!;
+            const characters = characterSets.get(credit.tmdbId)!;
             characters.add(character);
             existing.character = [...characters].join(" / ");
           }

@@ -131,7 +131,7 @@ test("upgrades existing movies with null magnet links and persists added links a
     legacy.prepare("INSERT INTO movies (title, original_title, status, watched_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
       .run("原有电影", "Original Movie", "watched", "2026-01-01T00:00:00.000Z", "2025-12-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
   } finally {
-    legacy.close();
+    legacy.close(true);
   }
   let upgraded = createDatabase(path);
   try {

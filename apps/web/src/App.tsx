@@ -19,12 +19,13 @@ export default function App() {
           <Route path="/watched" element={<LegacyLibraryRedirect status="watched" />} />
           <Route path="/movies/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute /></Suspense>} />
           <Route path="/catalog/movies/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog /></Suspense>} />
+          <Route path="/catalog/tv/:id" element={<Suspense fallback={<MovieLoading />}><MovieRoute catalog mediaType="tv" /></Suspense>} />
           <Route path="/actors/:id" element={<Suspense fallback={null}><ActorRoute /></Suspense>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>
       <footer className="site-footer">
-        <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" aria-label="TMDB 电影资料来源"><img src={`${import.meta.env.BASE_URL}tmdb.svg`} width="64" height="8" loading="lazy" decoding="async" alt="TMDB" /></a>
+        <a href="https://www.themoviedb.org/" target="_blank" rel="noreferrer" aria-label="TMDB 影视资料来源"><img src={`${import.meta.env.BASE_URL}tmdb.svg`} width="64" height="8" loading="lazy" decoding="async" alt="TMDB" /></a>
         <p>This product uses the TMDB API but is not endorsed or certified by TMDB.</p>
       </footer>
       <ThemeToggle />

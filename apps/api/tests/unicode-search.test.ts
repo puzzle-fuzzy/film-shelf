@@ -93,7 +93,7 @@ describe("Unicode-aware movie search", () => {
       original.prepare("INSERT INTO movies (title, original_title, status, watched_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
         .run("85年盛夏", "E\u0301te\u0301 85", "watched", "2026-01-01T00:00:00.000Z", "2025-12-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z");
     } finally {
-      original.close();
+      original.close(true);
     }
     const upgraded = createDatabase(path);
     try {

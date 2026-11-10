@@ -14,16 +14,34 @@ const tmdbImageBase = "https://image.tmdb.org/t/p/";
 const tmdbPosterPath = "((?:w92|w154|w185|w342|w500|w780|original)/[A-Za-z0-9_-]+\\.(?:jpg|png|webp))";
 const tmdbPosterSourcePattern = new RegExp(`^/t/p/${tmdbPosterPath}$`);
 export const LOCAL_TMDB_POSTER_PATH_PATTERN = new RegExp(`^/api/posters/tmdb/${tmdbPosterPath}$`);
+export const LOCAL_DOUBAN_POSTER_PATH_PATTERN = /^\/api\/posters\/douban\/([A-Za-z0-9_-]{1,2048})(?![\s\S])/;
+const doubanStaticSourcePattern = /^https:\/\/img(?:1|2|3|9)\.doubanio\.com\/view\/photo\/(?:s_ratio_poster|m_ratio_poster|l|large|raw)\/public\/p[1-9][0-9]{0,19}\.(?:jpg|png|webp)$/;
+const doubanSignedSourcePattern = /^https:\/\/qnmob[123]-sign\.doubanio\.com\/view\/photo\/large\/public\/p[1-9][0-9]{0,19}\.jpg\?sa_cv=[a-f0-9]{32}&sa_ct=[a-f0-9]{8}&imageView2\/0\/q\/80\/w\/9999\/h\/120\/format\/jpg$/;
 const filenamePattern = /^[a-f0-9]{64}\.(jpg|png|webp)$/;
 const types = { jpg: "image/jpeg", png: "image/png", webp: "image/webp" } as const;
 type ImageExtension = keyof typeof types;
 type PosterFetcher = (...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>;
 
 function invalidSource() {
-  return new ApiException(400, "POSTER_URL_INVALID", "海报地址必须是 TMDB 图片地址或已保存的本地海报地址。");
+  return new ApiException(400, "POSTER_URL_INVALID", "海报地址必须是受信任的 TMDB、豆瓣图片地址或本地海报地址。");
+}
+
+function isDoubanSource(source: string): boolean {
+  return source.length <= 1536 && !/[\s\\%]/.test(source)
+    && (doubanStaticSourcePattern.test(source) || doubanSignedSourcePattern.test(source));
+}
+
+export function doubanPosterSource(localPath: string): string {
+  const encoded = LOCAL_DOUBAN_POSTER_PATH_PATTERN.exec(localPath)?.[1];
+  if (!encoded) throw invalidSource();
+  const source = Buffer.from(encoded, "base64url").toString("utf8");
+  // Buffer's decoder tolerates invalid encodings; only accept their canonical form.
+  if (Buffer.from(source).toString("base64url") !== encoded || !isDoubanSource(source)) throw invalidSource();
+  return source;
 }
 
 function remoteSource(source: string) {
+  if (isDoubanSource(source)) return source;
   let url: URL;
   try { url = new URL(source); } catch { throw invalidSource(); }
   const rawPath = source.match(/^https:\/\/[^/]+(\/[^?#]*)/i)?.[1];
@@ -36,11 +54,17 @@ function remoteSource(source: string) {
 }
 
 export function localPosterUrl(source: string | null | undefined): string | null {
+  if (source && /[\u0000-\u001f\u007f]/.test(source)) return null;
   const path = source?.trim();
   if (!path) return null;
   if (LOCAL_POSTER_PATH_PATTERN.test(path) || LOCAL_TMDB_POSTER_PATH_PATTERN.test(path)) return path;
   try {
+    if (path.startsWith("/api/posters/douban/")) {
+      doubanPosterSource(path);
+      return path;
+    }
     const remote = remoteSource(path);
+    if (isDoubanSource(remote)) return `/api/posters/douban/${Buffer.from(remote).toString("base64url")}`;
     return `/api/posters/tmdb/${remote.slice(tmdbImageBase.length)}`;
   } catch {
     return null;
@@ -90,7 +114,7 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
       response = await fetcher(source, {
         redirect: "error",
         signal: AbortSignal.timeout(15_000),
-        headers: { Accept: "image/jpeg, image/png, image/webp" },
+        headers: { Accept: "image/jpeg, image/png, image/webp", ...(isDoubanSource(source) ? { Referer: "https://movie.douban.com/" } : {}) },
       });
       if (!response.ok) throw new ApiException(502, "POSTER_DOWNLOAD_FAILED", "海报下载失败，请稍后重试。");
       const mime = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
@@ -155,6 +179,7 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
     },
     async save(source: string | null | undefined): Promise<string | null> {
       if (source == null) return null;
+      if (/[\u0000-\u001f\u007f]/.test(source)) throw invalidSource();
       const text = source.trim();
       const local = LOCAL_POSTER_PATH_PATTERN.exec(text);
       if (local) {
@@ -162,7 +187,8 @@ export function createPosterStore({ directory = defaultPostersDirectory, fetcher
         return text;
       }
       const preview = LOCAL_TMDB_POSTER_PATH_PATTERN.exec(text);
-      const remote = preview ? `${tmdbImageBase}${preview[1]}` : remoteSource(text);
+      const remote = preview ? `${tmdbImageBase}${preview[1]}`
+        : text.startsWith("/api/posters/douban/") ? doubanPosterSource(text) : remoteSource(text);
       const hash = createHash("sha256").update(remote).digest("hex");
       const active = inFlight.get(hash);
       if (active) return active;
