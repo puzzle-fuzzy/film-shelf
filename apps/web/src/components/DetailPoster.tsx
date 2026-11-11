@@ -107,7 +107,7 @@ function PosterGallery({ gallery, title, onDismiss }: { gallery: MoviePosterList
 function PosterPreview({ source, title, onDismiss }: { source: HTMLImageElement; title: string; onDismiss: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const poster = useRef<HTMLImageElement>(null);
-  const white = useRef<HTMLDivElement>(null);
+  const background = useRef<HTMLDivElement>(null);
   const closeButton = useRef<HTMLButtonElement>(null);
   const animations = useRef<Animation[]>([]);
   const closing = useRef(false);
@@ -115,7 +115,7 @@ function PosterPreview({ source, title, onDismiss }: { source: HTMLImageElement;
   useLayoutEffect(() => {
     const modal = dialog.current!;
     const image = poster.current!;
-    const backdrop = white.current!;
+    const backdrop = background.current!;
     const from = source.getBoundingClientRect();
     modal.showModal();
     closeButton.current?.focus({ preventScroll: true });
@@ -138,7 +138,7 @@ function PosterPreview({ source, title, onDismiss }: { source: HTMLImageElement;
   function dismiss() {
     const modal = dialog.current;
     const image = poster.current;
-    const backdrop = white.current;
+    const backdrop = background.current;
     if (!modal?.open || !image || !backdrop || closing.current) return;
     closing.current = true;
 
@@ -173,7 +173,7 @@ function PosterPreview({ source, title, onDismiss }: { source: HTMLImageElement;
     onCancel={(event) => { event.preventDefault(); dismiss(); }}
     onClick={(event) => { if (event.target === event.currentTarget) dismiss(); }}
   >
-    <div ref={white} className="poster-preview-white" aria-hidden="true" />
+    <div ref={background} className="poster-preview-background" aria-hidden="true" />
     <img
       ref={poster}
       className="poster-preview-image"
