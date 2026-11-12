@@ -62,6 +62,9 @@ export const idSchema = z.string().regex(/^[1-9]\d*$/).transform(Number).pipe(po
 export const movieStatusSchema = z.enum(["recommended", "watched"]);
 export const statusBodySchema = z.object({ status: movieStatusSchema }).strict();
 export const magnetBodySchema = z.object({ magnetUrl: magnetUrlSchema }).strict();
+export const personalReviewBodySchema = z.object({
+  personalReview: z.string().max(20000, "观后感过长").nullable().transform((value) => value?.trim() ? value : null),
+}).strict();
 export const importBodySchema = z.union([
   z.object({ tmdbId: positiveInteger, magnetUrl: magnetUrlSchema.optional() }).strict().transform(({ tmdbId, magnetUrl }) => ({ provider: "tmdb" as const, mediaType: "movie" as const, externalId: tmdbId, magnetUrl })),
   z.object({ provider: metadataSourceSchema, mediaType: mediaTypeSchema, externalId: positiveInteger, magnetUrl: magnetUrlSchema.optional() }).strict(),

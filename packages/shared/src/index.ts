@@ -72,6 +72,7 @@ export interface Movie {
   overview: string;
   cast: CastMember[];
   magnetUrl: string | null;
+  personalReview: string | null;
   status: MovieStatus;
   watchedAt: string | null;
   createdAt: string;
@@ -90,7 +91,7 @@ export interface SearchMovie {
   overview: string;
 }
 
-export type MovieDetailData = Pick<Movie, "title" | "originalTitle" | "posterUrl" | "releaseDate" | "overview" | "cast" | "watchedAt" | "magnetUrl" | "mediaType" | "episodeCount" | "tmdbId" | "doubanId">;
+export type MovieDetailData = Pick<Movie, "title" | "originalTitle" | "posterUrl" | "releaseDate" | "overview" | "cast" | "watchedAt" | "magnetUrl" | "personalReview" | "mediaType" | "episodeCount" | "tmdbId" | "doubanId">;
 
 export interface CatalogMovieDetails extends MovieDetailData {
   tmdbId: number | null;

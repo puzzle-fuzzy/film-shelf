@@ -14,7 +14,7 @@ import { localizeCastImages } from "./cast-images";
 import { resolveDoubanMovieIdentity } from "./douban-identities";
 import { createTmdbProvider, type MovieMetadataProvider } from "./tmdb";
 import { createDoubanProvider, tmdbMetadataProvider, type MetadataProvider } from "./metadata";
-import { posterPhotosBodySchema, posterSelectionBodySchema, posterSyncBodySchema, actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
+import { posterPhotosBodySchema, posterSelectionBodySchema, posterSyncBodySchema, actorMoviesQuerySchema, idSchema, importBodySchema, listQuerySchema, magnetBodySchema, personalReviewBodySchema, metadataSearchQuerySchema, movieInputSchema, searchQuerySchema, statusBodySchema } from "./validation";
 
 const { titleSearch: _titleSearch, originalTitleSearch: _originalTitleSearch, watchedOrder: _watchedOrder, ...movieColumns } = getTableColumns(movies);
 const gridMovieColumns = { id: movies.id, title: movies.title, releaseDate: movies.releaseDate, posterUrl: movies.posterUrl, mediaType: movies.mediaType };
@@ -220,6 +220,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
         overview: saved.overview,
         cast: saved.cast,
         magnetUrl: saved.magnetUrl,
+        personalReview: saved.personalReview,
         watchedAt: saved.watchedAt,
         libraryMovieId: saved.id,
         libraryStatus: saved.status,
@@ -239,6 +240,7 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
         overview: metadata.overview || "",
         cast: cast.map((actor) => ({ ...actor, profileUrl: localActorImageUrl(actor.profileUrl) })),
         magnetUrl: null,
+        personalReview: null,
         watchedAt: null,
         libraryMovieId: null,
         libraryStatus: null,
@@ -346,6 +348,16 @@ export function createApp({ db, tmdb = createTmdbProvider(), tmdbToken, douban =
       watchedOrder: status === "watched" ? sql`(select coalesce(max(${movies.watchedOrder}), 0) + 1 from ${movies})` : null,
       updatedAt: timestamp,
     }).where(eq(movies.id, id)).returning(movieColumns).get()!;
+    return c.json({ movie: serializeMovie(updated) });
+  });
+
+  app.patch("/api/movies/:id/personal-review", async (c) => {
+    const id = idSchema.parse(c.req.param("id"));
+    const { personalReview } = personalReviewBodySchema.parse(await c.req.json());
+    const movie = findMovie(id);
+    if (movie.personalReview === personalReview) return c.json({ movie });
+    const updated = db.update(movies).set({ personalReview, updatedAt: new Date().toISOString() })
+      .where(eq(movies.id, id)).returning(movieColumns).get()!;
     return c.json({ movie: serializeMovie(updated) });
   });
 

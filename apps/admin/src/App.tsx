@@ -112,7 +112,7 @@ function MovieAdmin() {
         </div>
       </SidebarInset>
       <AddMovieDialog open={addOpen} onOpenChange={setAddOpen} providers={providers} onAdded={(movie) => { setRevision((value) => value + 1); toast.success(`《${movie.title}》已加入想看`); }} />
-      <MovieDetailDialog movie={detail} onClose={() => setDetail(null)} onSaved={(movie, field) => { setDetail((current) => current?.id === movie.id ? movie : current); setRevision((value) => value + 1); toast.success(field === "poster" ? "主封面已保存" : "磁力链接已保存"); }} />
+      <MovieDetailDialog movie={detail} onClose={() => setDetail(null)} onSaved={(movie, field) => { setDetail((current) => current?.id === movie.id ? movie : current); setRevision((value) => value + 1); toast.success(field === "poster" ? "主封面已保存" : field === "personalReview" ? "观后感已保存" : "磁力链接已保存"); }} />
       <Toaster position="bottom-right" richColors closeButton />
     </SidebarProvider>
   );

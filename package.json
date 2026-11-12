@@ -12,7 +12,7 @@
     "build": "bun run --parallel --filter '@film-shelf/admin' --filter '@film-shelf/web' build",
     "start": "bun run --filter '@film-shelf/api' start",
     "typecheck": "bun run --workspaces --if-present typecheck",
-    "test": "bun test apps/api",
+    "test": "bun test apps/api apps/web/tests",
     "db:generate": "bun run --filter '@film-shelf/api' db:generate",
     "db:migrate": "bun run --filter '@film-shelf/api' db:migrate"
   },

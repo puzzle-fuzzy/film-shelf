@@ -28,7 +28,7 @@ test("TV migration preserves every legacy field and ID, permits same-number TMDB
   try {
     const row = database.sqlite.prepare("SELECT * FROM movies WHERE id = 41").get() as Record<string, unknown>;
     const { media_type, douban_id, episode_count, ...oldFields } = row;
-    expect(oldFields).toEqual(original!);
+    expect(oldFields).toEqual({ ...original!, personal_review: null });
     expect({ media_type, douban_id, episode_count }).toEqual({ media_type: "movie", douban_id: null, episode_count: null });
     const insert = database.sqlite.prepare("INSERT INTO movies (tmdb_id, douban_id, media_type, title, title_search, created_at, updated_at) VALUES (?, ?, ?, ?, ?, 'now', 'now')");
     insert.run(100, null, "tv", "同号电视剧", "同号电视剧");

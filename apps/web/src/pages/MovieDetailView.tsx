@@ -39,6 +39,11 @@ export function MovieDetailView({ movie, libraryMovieId, backTo, backState, back
             <p className="detail-overview">{movie.overview || "暂无简介。"}</p>
           </section>
 
+          {movie.personalReview?.trim() && <section className="detail-section" aria-labelledby="detail-personal-review-heading">
+            <h2 id="detail-personal-review-heading">我的观后感</h2>
+            <p className="detail-overview">{movie.personalReview}</p>
+          </section>}
+
           {magnet && <MagnetSection magnet={magnet} />}
 
           <section className="detail-section" aria-labelledby="detail-cast-heading">

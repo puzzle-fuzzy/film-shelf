@@ -36,7 +36,7 @@ test("gallery migration preserves every movie field and backfills one primary ro
       join(migrationsFolder, `${entry.tag}.sql`),
       join(legacyFolder, `${entry.tag}.sql`),
     );
-  let original: unknown[];
+  let original: Record<string, unknown>[];
   const legacy = new Database(path);
   try {
     migrate(drizzle({ client: legacy }), { migrationsFolder: legacyFolder });
@@ -53,7 +53,7 @@ test("gallery migration preserves every movie field and backfills one primary ro
       9,
     );
     insert.run(42, 889, "tv", null, "[]", null, 10);
-    original = legacy.prepare("SELECT * FROM movies ORDER BY id").all();
+    original = legacy.prepare("SELECT * FROM movies ORDER BY id").all() as Record<string, unknown>[];
   } finally {
     legacy.close(true);
   }
@@ -61,7 +61,7 @@ test("gallery migration preserves every movie field and backfills one primary ro
   try {
     expect(
       database.sqlite.prepare("SELECT * FROM movies ORDER BY id").all(),
-    ).toEqual(original!);
+    ).toEqual(original!.map((row) => ({ ...row, personal_review: null })));
     const gallery = database.sqlite
       .prepare("SELECT * FROM movie_posters")
       .all();
@@ -79,7 +79,7 @@ test("gallery migration preserves every movie field and backfills one primary ro
     database = createDatabase(path);
     expect(
       database.sqlite.prepare("SELECT * FROM movies ORDER BY id").all(),
-    ).toEqual(original!);
+    ).toEqual(original!.map((row) => ({ ...row, personal_review: null })));
     expect(
       database.sqlite.prepare("SELECT * FROM movie_posters").all(),
     ).toEqual(gallery);

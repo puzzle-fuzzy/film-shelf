@@ -17,6 +17,7 @@ export const movies = sqliteTable("movies", {
   overview: text("overview").notNull().default(""),
   cast: text("cast", { mode: "json" }).$type<CastMember[]>().notNull().default(sql`'[]'`),
   magnetUrl: text("magnet_url"),
+  personalReview: text("personal_review"),
   status: text("status", { enum: ["recommended", "watched"] }).notNull().default("recommended"),
   watchedAt: text("watched_at"),
   watchedOrder: integer("watched_order"),

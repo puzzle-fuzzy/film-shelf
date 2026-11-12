@@ -11,7 +11,7 @@ import { useIsMobile } from "@/hooks/use-mobile";
 import { api, errorMessage } from "@/lib/api";
 import { MoviePosterManager } from "@/components/movie-poster-manager";
 
-export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | null; onClose: () => void; onSaved: (movie: Movie, field: "poster" | "magnet") => void }) {
+export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | null; onClose: () => void; onSaved: (movie: Movie, field: "poster" | "magnet" | "personalReview") => void }) {
   const isMobile = useIsMobile();
   return (
     <Drawer open={movie !== null} onOpenChange={(open) => { if (!open) onClose(); }} direction={isMobile ? "bottom" : "right"}>
@@ -40,12 +40,48 @@ export function MovieDetailDialog({ movie, onClose, onSaved }: { movie: Movie | 
             <Separator />
             <section className="grid gap-2"><h3 className="font-medium">{movie.mediaType === "tv" ? "剧集简介" : "电影简介"}</h3><p className="leading-6 whitespace-pre-wrap text-muted-foreground">{movie.overview || "暂无简介。"}</p></section>
             <Separator />
+            <MoviePersonalReviewEditor key={movie.id} movie={movie} onSaved={(saved) => onSaved(saved, "personalReview")} />
+            <Separator />
             <section className="grid gap-3 pb-2"><h3 className="font-medium">主演</h3>{movie.cast.length === 0 ? <p className="text-muted-foreground">暂无主演资料。</p> : movie.cast.map((actor, index) => <div key={`${actor.name}-${index}`} className="flex items-center gap-3"><MoviePoster src={actor.profileUrl} title={actor.name} className="h-12 w-9 rounded" /><div className="min-w-0"><p className="font-medium">{actor.name}</p>{actor.character && <p className="mt-1 text-xs text-muted-foreground">饰 {actor.character}</p>}</div></div>)}</section>
           </div>
           <DrawerFooter><DrawerClose asChild><Button variant="outline">关闭</Button></DrawerClose></DrawerFooter>
         </>}
       </DrawerContent>
     </Drawer>
+  );
+}
+
+function MoviePersonalReviewEditor({ movie, onSaved }: { movie: Movie; onSaved: (movie: Movie) => void }) {
+  const [value, setValue] = useState(movie.personalReview || "");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => { setValue(movie.personalReview || ""); setError(null); }, [movie.personalReview]);
+  const personalReview = value.trim() ? value : null;
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await api<{ movie: Movie }>(`/api/movies/${movie.id}/personal-review`, { method: "PATCH", body: JSON.stringify({ personalReview }) });
+      setValue(result.movie.personalReview || "");
+      onSaved(result.movie);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="grid gap-2" onSubmit={(event) => void save(event)}>
+      <Label htmlFor={`movie-personal-review-${movie.id}`}>我的观后感</Label>
+      <textarea id={`movie-personal-review-${movie.id}`} value={value} onChange={(event) => { setValue(event.target.value); setError(null); }} disabled={saving} maxLength={20000} rows={8} placeholder="记录这部作品带来的感受…" aria-invalid={Boolean(error)} aria-describedby={`movie-personal-review-help-${movie.id}${error ? ` movie-personal-review-error-${movie.id}` : ""}`} className="min-h-40 w-full min-w-0 resize-y rounded-md border border-input bg-transparent px-3 py-2 text-base leading-6 shadow-xs outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:aria-invalid:ring-destructive/40" />
+      <p id={`movie-personal-review-help-${movie.id}`} className="text-xs text-muted-foreground">最多 20000 字符，保留换行；留空后保存可清除观后感。</p>
+      {error && <p id={`movie-personal-review-error-${movie.id}`} role="alert" className="text-xs leading-5 text-destructive">{error}</p>}
+      <Button type="submit" variant="outline" size="sm" className="w-fit" disabled={saving || personalReview === movie.personalReview}>{saving ? "正在保存…" : "保存观后感"}</Button>
+    </form>
   );
 }
 

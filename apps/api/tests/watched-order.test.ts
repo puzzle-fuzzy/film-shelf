@@ -97,7 +97,7 @@ test("watched order migration preserves the entire existing list and its metadat
   let upgraded = createDatabase(path);
   try {
     const rows = upgraded.sqlite.prepare("SELECT * FROM movies ORDER BY id").all() as Record<string, unknown>[];
-    expect(rows.map(({ watched_order: _, media_type: _media, douban_id: _douban, episode_count: _episodes, ...row }) => row)).toEqual(original!);
+    expect(rows.map(({ watched_order: _, media_type: _media, douban_id: _douban, episode_count: _episodes, ...row }) => row)).toEqual(original!.map((row) => ({ ...row, personal_review: null })));
     expect(rows.every((row) => row.media_type === "movie" && row.douban_id === null && row.episode_count === null)).toBe(true);
     expect(rows.map(row => row.watched_order)).toEqual([1, 2, 3, null]);
     const reader = createApp({ db: upgraded.db, tmdbToken: "" });
