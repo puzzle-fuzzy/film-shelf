@@ -57,9 +57,9 @@
 
 **Interfaces:** Consume Task 1 PATCH route, 23 nonempty entries from `mapping/diary-mapping-preview.json`; confirmed alias `八仙 -> movie 9 八仙！`.
 
-- [ ] Independently review backend and frontend diffs; fix material findings.
-- [ ] Run `bun test`, `bun run typecheck`, `bun run build`; verify admin edit/clear and detail visibility using isolated QA data.
-- [ ] Back up current production SQLite; apply migration to a clone and compare all preexisting columns and poster records.
-- [ ] Build and stage a release from current deployed code, preserving environment/runtime dependencies, media symlink and Nginx restrictions; activate atomically with rollback.
-- [ ] Revalidate all 23 diary-to-film identities and source hash; import only nonempty reviews via loopback API, then compare every body exactly and verify all other fields/order unchanged.
-- [ ] Check public details, actor-origin details, homepage grid and public write rejection. Capture representative desktop/mobile screenshots.
+- [x] Independently review backend and frontend diffs; fix material findings.
+- [x] Run `bun test`, `bun run typecheck`, `bun run build`; verify admin edit/clear and detail visibility using isolated QA data.
+- [x] Back up current production SQLite; apply migration to a clone and compare all preexisting columns and poster records.
+- [x] Build and stage a release from current deployed code, preserving environment/runtime dependencies, media symlink and Nginx restrictions; activate atomically with rollback.
+- [x] Revalidate all 23 diary-to-film identities and source hash; import only nonempty reviews via loopback API, then compare every body exactly and verify all other fields/order unchanged.
+- [x] Check public details, actor-origin details, homepage grid and public write rejection. Capture representative desktop/mobile screenshots.
